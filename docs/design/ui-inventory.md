@@ -7,271 +7,262 @@
 ## 1. Design System & Foundational Principles
 
 ### 1.1 Core Aesthetic Guidelines
-1. **Minimalist Fintech Aesthetic:** High data density without clutter, elegant typography hierarchy, generous touch targets (minimum 44x44 dp), and subdued borders.
-2. **Zero Floating-Point Jargon:** Every monetary figure is formatted with proper currency formatting (e.g. `₹12,450.00`). Users must never see developer terminology like "minor units", "paise", "cents", or "derived balance".
-3. **Strictly No Raw Emojis:** The application relies exclusively on an icon pack (`@expo/vector-icons`: `Ionicons` & `Feather`). Emojis are prohibited across all UI elements, buttons, and badges.
+
+1. **Modern Purple Fintech Aesthetic:** High data density wrapped in a clean, soft-card interface using violet gradients (`#7C3AED` to `#9333EA`), crisp white cards, generous touch targets (minimum 44x44 dp), and soft ambient drop shadows.
+2. **Multi-Currency Precision:** Every monetary figure is formatted with explicit symbol positioning and locale rules (e.g., `$87,457.85`, `₹ 27,678`, `Cash, EUR -354.25$`).
+3. **Selective Visual Micro-Badging:** Primary UI relies on clean vector icons (`Ionicons` & `Feather`), complemented by contextual badges (e.g., `✨ Your insight is ready`).
 4. **Safe Area Inset Protection:** All views strictly observe `useSafeAreaInsets()`. Screen content never collides with or bleeds underneath the status bar, camera notch, Dynamic Island, or Android gesture navigation pill.
-5. **Clean Zero-Data Start:** Fresh installs boot with zero dummy data and present an onboarding flow to guide first-time account setup.
-6. **Isolated Technical Diagnostics:** System stats, SQLite engine logs, and database metrics are strictly quarantined to the bottom of the Settings screen.
+5. **Clean Zero-Data Start:** Fresh installs boot into an onboarding flow featuring 3D visual assets to guide initial account setup.
+6. **Isolated Technical Diagnostics:** System stats, SQLite engine logs, and database metrics are strictly quarantined to the Settings screen.
 
 ### 1.2 Color Themes & Accent Presets
-The app supports 3 Theme Modes and 6 Brand Accent Presets powered by centralized design tokens (`ThemeContext.tsx`):
-- **Modes:** `Light`, `Dark`, `System`
-- **Backgrounds:**
-  - Dark: Deep Charcoal (`#09090b` / `#121215`), Surface Card (`#18181b` / `#1e1e24`), Card Elevated (`#27272a`)
-  - Light: Pure Crisp White (`#ffffff`), Surface Canvas (`#f4f4f5` / `#f8fafc`), Card Elevated (`#ffffff`)
-- **Accent Presets:**
-  1. `default` — Emerald Green (`#10b981`)
-  2. `ocean` — Sapphire Cyan (`#0ea5e9`)
-  3. `forest` — Sage Forest (`#059669`)
-  4. `violet` — Electric Indigo (`#8b5cf6`)
-  5. `amber` — Warm Golden Amber (`#f59e0b`)
-  6. `rose` — Crimson Rose (`#f43f5e`)
-- **Semantic Financial Colors:**
-  - Income / Surplus / Healthy: Emerald (`#10b981`)
-  - Expense / Debt / Exceeded: Crimson Red (`#ef4444`)
-  - Warning / Approaching Limit: Amber (`#f59e0b`)
-  - Transfers / Informational: Accent Violet or Slate Blue (`#6366f1`)
+
+The app supports 3 Theme Modes powered by centralized design tokens (`ThemeContext.tsx`):
+
+* **Modes:** `Light`, `Dark`, `System`
+* **Primary Gradient Tokens:**
+* Hero Header Card: Soft Electric Purple to Magenta (`#7C3AED` → `#C084FC`)
+* Accent FAB: Electric Violet (`#8B5CF6`)
+
+
+* **Backgrounds:**
+* Light Canvas: Soft Cool Gray (`#F8FAFC` / `#F1F5F9`), Surface Card (`#FFFFFF`)
+* Dark Canvas: Charcoal / Deep Navy (`#0F172A` / `#1E293B`)
+
+
+* **Semantic Financial Colors:**
+* Income / Surplus / Healthy: Emerald Green (`#10B981`)
+* Expense / Debt / Exceeded: Crimson Red / Coral (`#EF4444` / `#F97316`)
+* Warning / Behind Target: Warm Amber (`#F59E0B`)
+* Informational / Tags: Slate Blue & Cyan (`#0EA5E9` / `#6366F1`)
+
+
 
 ---
 
 ## 2. Navigation Architecture
 
-### Bottom Tab Navigator (Persistent Root Bar)
-The application utilizes a persistent, inset-safe bottom navigation bar with responsive active highlight states:
+### Persistent Bottom Bar
 
-| Tab ID | Label | Inactive Icon | Active Icon | Primary Screen Component |
-| :--- | :--- | :--- | :--- | :--- |
-| `home` | **Home** | `home-outline` | `home` | `HomeScreen` |
-| `accounts` | **Accounts** | `wallet-outline` | `wallet` | `AccountsScreen` |
-| `transactions` | **Ledger** | `swap-horizontal-outline` | `swap-horizontal` | `TransactionsScreen` |
-| `budgets` | **Budgets** | `pie-chart-outline` | `pie-chart` | `BudgetsGoalsScreen` |
-| `groups` | **Groups** | `people-outline` | `people` | `GroupsScreen` |
-| `reports` | **Reports** | `bar-chart-outline` | `bar-chart` | `ReportsScreen` |
-| `settings` | **Settings** | `settings-outline` | `settings` | `SettingsScreen` |
+The application uses a **4-Tab Navigation Bar with an Elevated Central Floating Action Button (FAB)**:
+
+| Tab ID | Label | Icon | Primary Screen Component | Key Sub-Views & Roles |
+| --- | --- | --- | --- | --- |
+| `home` | **Home** | `home` | `HomeScreen` | Total Balance Banner, Cashflow Split, Safe-to-Spend Ring, Recent Transactions |
+| `reports` | **Report** | `bar-chart` | `ReportsScreen` | Donut & Weekly Bar Charts, Category Breakdown, Top Spend Areas |
+| `fab` | *(Center FAB)* | `add` (`+`) | *Global Quick Add* | Triggers Quick Add / Expense Entry Modal |
+| `plan` | **Plan** | `wallet` / `clipboard` | `PlanScreen` | Savings Goals with Sliders & Category Budgets with Progress Rings |
+| `settings` | **Settings** | `settings` | `SettingsScreen` | Theme Modes, Currency Settings, Security, Offline Database Diagnostics |
 
 ---
 
 ## 3. Screen-by-Screen Visual Inventory
 
-### Screen 1: First-Time Onboarding Flow (`OnboardingModal.tsx`)
-- **Trigger:** App launch when `app_preferences.hasCompletedOnboarding === false`.
-- **Layout:** Fullscreen modal with smooth slide/card transitions.
-- **Sub-Steps:**
-  1. **Welcome Slide:**
-     - App icon / emblem with accent glow.
-     - Headline: *"Welcome to Biyong"*
-     - Subtitle: *"Private, honest, 100% offline personal finance."*
-     - Value proposition cards: Zero ads, zero bank scraping, full data sovereignty.
-  2. **The Ledger Philosophy Slide:**
-     - Visual diagram showing money movement (Income → Accounts → Expenses).
-     - Core financial invariant note: *"Transfers between your own accounts never count as expenses."*
-  3. **First Account Setup Slide:**
-     - Input field: Account Name (e.g. "Primary Bank", "Cash Wallet").
-     - Account Type Selector: Grid of types (Bank, Cash, Wallet, Credit).
-     - Starting Balance Input: Currency-formatted input.
-     - CTA Button: *"Get Started"* → creates account, persists onboarding completion, transitions to Home.
+### Screen 1: Onboarding Welcome Flow (`OnboardingModal.tsx`)
+
+* **Trigger:** App launch when `app_preferences.hasCompletedOnboarding === false`.
+* **Layout:** Fullscreen card with centered 3D visual graphics.
+* **Visual Elements:**
+* **Illustration:** Central 3D rendered wallet asset filled with coins.
+* **Headline:** *"Save your money with Expense Tracker"*
+* **Subtitle:** *"Save money! The more your money works for you, the less you have to work for money."*
+* **CTA Button:** Full-width rounded Purple button labeled *"Let's Start"* → transitions to first account setup and Home.
+
+
 
 ---
 
 ### Screen 2: Home / Financial Dashboard (`HomeScreen.tsx`)
-- **Header:**
-  - Greeting ("Good morning / afternoon / evening"), current date.
-  - Active profile / avatar badge.
-- **Hero Card: Net Worth Overview:**
-  - Total Net Worth banner (large prominent font, e.g. `₹1,45,200.00`).
-  - Monthly Cashflow Mini-Stats: Total Income (green with arrow down-left) and Total Expenses (red with arrow up-right).
-- **Quick Action Bar:**
-  - 3 primary pill buttons:
-    - `+ Expense` (accent color icon, opens `QuickAddModal` with Expense preselected).
-    - `+ Income` (green icon, opens `QuickAddModal` with Income preselected).
-    - `Transfer` (blue icon, opens `QuickAddModal` with Transfer preselected).
-- **Accounts Carousel / Preview:**
-  - Section title with *"See all"* link pointing to Accounts tab.
-  - Horizontal card list displaying account name, type icon, and live balance.
-- **Recent Transactions Section:**
-  - Section title with *"View all"* link pointing to Ledger tab.
-  - Last 5 transactions with category icons, merchant name/notes, relative timestamp, and color-coded signed amounts.
-- **Empty State (Fresh install):**
-  - Sleek illustration/icon card encouraging first transaction or account creation.
+
+* **Header Navigation:**
+* Profile avatar badge (top-left).
+* Date / Period Dropdown picker (e.g., `November 2025 v` or `APRIL 2023`).
+* Notification bell icon (top-right).
+
+
+* **Hero Balance Header Card:**
+* **Gradient Banner Variant:** Violet-to-purple header displaying `Current Balance` (e.g., `$87,457.85`) with trend subtitle (e.g., `+$784 than last week`).
+* **Alternative Card Variant:** Floating card displaying `Total Balance` with quick options menu.
+
+
+* **Cashflow & Safe-to-Spend Cards:**
+* **Your Money Split Card:** Dual sub-cards showing total `Income` (`$4,875.12`) and `Expenses` (`$8,145.78`) with a `Details >` shortcut link.
+* **Safe to Spend Gauge Widget:** Circular progress ring indicating safe daily balance (e.g., `Safe to Spend ₹ 27,678` with `24 days left`).
+
+
+* **AI Insight Banner:**
+* Dark rounded pill card: `✨ Your insight is ready` with a `Get Pro >` action button.
+
+
+* **Recent Transactions Section:**
+* Section header: `Transactions` with period indicator badge (e.g., `For the Period`) and section total sum.
+* **Transaction Row Item:**
+* Left: Category circular icon badge.
+* Center: Merchant or category name, tag pills (e.g., `Red Card`, `Vacation`, `ICICI Bank xxxx6579`), and timestamp.
+* Right: Color-coded signed amount (e.g., `-354.25$` red expense, `+$1200` green income).
+
+
+
+
 
 ---
 
-### Screen 3: Accounts Hub (`AccountsScreen.tsx`)
-- **Header:**
-  - Title: *"Your Accounts"*.
-  - Total Net Worth & Assets vs. Liabilities summary pill.
-- **Action Bar:**
-  - `+ Add Account` button triggering `AddAccountModal`.
-- **Account Groups / Cards List:**
-  - Grouped or tagged by category:
-    - **Liquid Accounts:** Checking, Savings, Cash Wallets.
-    - **Credit & Liabilities:** Credit Cards, Loans.
-    - **Investments:** Mutual Funds, Stocks, Deposits.
-  - **Account Card Elements:**
-    - Icon reflecting account type (Bank building, Wallet, Card).
-    - Account Name & Type badge (e.g. `Bank`, `Cash`, `Credit`).
-    - Derived balance (large bold font).
-    - Action menu / swipe actions: *View Transactions*, *Archive Account*.
-- **Archived Accounts Accordion:**
-  - Collapsible drawer showing inactive/closed accounts without cluttering active net worth.
+### Screen 3: Reports & Advanced Analytics (`ReportsScreen.tsx`)
+
+* **Header:**
+* Back navigation button `< Report` / `< Overview`.
+* Date range / Month picker dropdown (`November 2025 v`).
+
+
+* **View Controls:**
+* **Segmented Pill Toggle:** Switch between `[ Expenses ]` and `[ Income ]`.
+* **Visualization Toggle:** Switch between Donut Chart view and Bar Chart view.
+
+
+* **Chart Views:**
+* **Donut Chart View:**
+* Center key metric: `Total Expenses $42,124.67`.
+* Multi-color segmented slices (Purple, Cyan, Green, Orange) with active touch tooltips (e.g., `31%`).
+
+
+* **Weekly Bar Chart View:**
+* Dual vertical bar chart comparing weekly Income (Purple) vs. Expenses (Orange) across `Week 1` through `Week 4`.
+
+
+
+
+* **Category Spending Breakdown List:**
+* Header: `All Expenses` with aggregate sum total.
+* **Category Cards:** Category icon, title (e.g., `Groceries`, `Clothing & Shoes`), percentage share (`31% of total`), month-over-month trend badge (`+12% vs last month`), monetary total (`$8,750.00`), and bottom progress bar indicator.
+
+
+* **Top Spend Areas Sub-View:**
+* Ranked expenditure list displaying total category spend and relative progress bars (`Cash Withdrawal`, `Food & Beverages`, `Transport`).
+
+
 
 ---
 
-### Screen 4: Transactions Ledger & Search (`TransactionsScreen.tsx`)
-- **Header:**
-  - Title: *"Transaction History"*.
-  - Total transactions count.
-- **Search & Filter Bar:**
-  - Instant text search field: searches merchant names, descriptions, and notes in real time.
-  - Horizontal Filter Chips:
-    - Type filters: `All`, `Expenses`, `Income`, `Transfers`.
-    - Category filter dropdown / horizontal scroll (e.g. `Groceries`, `Dining`, `Housing`, `Utilities`).
-    - Date range selector.
-- **Transaction Feed:**
-  - Date-grouped sections (e.g. *"Today"*, *"Yesterday"*, *"September 4, 2026"*).
-  - **Transaction Row Item (`TransactionItem.tsx`):**
-    - Left: Category circular icon badge with category-tinted background.
-    - Center: Merchant or title (primary bold), Account name & subcategory (secondary small).
-    - Right: Amount formatted with `+` or `-` and color-coded (Green for income, Red for expense, Blue for transfer).
-    - Recurring indicator badge (small repeat icon if transaction is scheduled).
-  - Tap interaction: Opens detail modal with options to edit or delete with confirmation.
+### Screen 4: Plan Hub — Goals & Budgets (`PlanScreen.tsx`)
+
+* **Header:**
+* Navigation title `< My Plan`.
+* Quick action toolbar: `+` create button and export/more options menu.
+
+
+* **Section 1: Savings Goals (`Goals`):**
+* Section title with `View All` shortcut.
+* **Goal Card:**
+* Title & icon (e.g., *"House by the Sea"*).
+* Saved amount indicator (`$8,750.00 Out of $1,750.00`).
+* Custom slider progress bar with handle indicator.
+* Schedule Alert Banner: Red/Orange warning pill (e.g., `⚠️ You're 30% behind schedule and off target.`).
+
+
+
+
+* **Section 2: Category Budgets (`Budgets`):**
+* Section title with `View All` shortcut.
+* **Budget Cards:**
+* Left: Category icon and title (*"Save for a Car"*, *"Save for Education"*, *"Vacation fund"*).
+* Center: Budgeted ratio (`$2500 of $7500`).
+* Right: **Circular Progress Ring Badge** showing percentage consumed (e.g., `55%`, `25%`, `65%`).
+
+
+
+
 
 ---
 
-### Screen 5: Budgets & Goals Hub (`BudgetsGoalsScreen.tsx`)
-- **Header Segmented Pill Switch:**
-  - Toggle between `[ Budgets ]` and `[ Goals ]`.
-- **Sub-View A: Category Budgets:**
-  - **Summary Banner:**
-    - Total Budgeted, Total Spent, Remaining Balance across all budgets.
-    - Overall Adherence Bar (color-shifting based on aggregate consumption).
-  - **Category Budget Cards:**
-    - Category Icon & Name.
-    - Period Badge: `Monthly` or `Weekly`.
-    - Health Status Badge:
-      - `Healthy` (Emerald pill, <80% consumed).
-      - `Warning` (Amber pill, 80%–99% consumed).
-      - `Exceeded` (Red pill, ≥100% consumed).
-    - Multi-color progress bar indicating spend percentage.
-    - Budget Details: `₹6,500.00 spent of ₹10,000.00`.
-    - Daily Allowance Metric: `₹145.83 / day remaining (24 days left)`.
-    - Rollover Indicator Badge: `Rollover On: Surplus carries over`.
-    - Delete Budget button.
-  - Floating Action Button: `+ Set Budget` (opens `AddBudgetModal`).
-- **Sub-View B: Savings Goals:**
-  - **Summary Banner:**
-    - Total Saved across all goals vs. Combined Target.
-  - **Savings Goal Cards:**
-    - Goal Title & Target Date Badge (e.g. *"Target: Feb 2027"*).
-    - Progress Bar with percentage completed (e.g. `42%`).
-    - Amount details: `₹50,000.00 saved of ₹1,20,000.00`.
-    - Required Savings Calculator: *"Save ₹11,666.67 / month to hit target on time"*.
-    - Projected Completion Pill: *"On track for Feb 06, 2027"*.
-    - Primary Button: `+ Contribute` (opens `ContributeGoalModal`).
-    - Delete goal action.
-  - Floating Action Button: `+ New Goal` (opens `AddGoalModal`).
+### Screen 5: Transaction Detail & Quick Actions Sheet (`TransactionDetailSheet.tsx`)
+
+* **Trigger:** Tapping any transaction row in the Ledger or Home feed.
+* **Header:** Category icon selector, title (e.g., `Balaji Vegetables`), transaction amount (`₹ 300`), and timestamp.
+* **Metadata Section:**
+* `Transfer Details`: Transaction ID (`6537543346424`), Payment source (`Debited from ICICIXXXXXXXX4567`).
+* `Remove from Expense`: Toggle switch to exclude from reports without deleting the record.
+
+
+* **Quick Action Bar (3 Action Buttons):**
+* `Share Receipt` (Green button)
+* `Split Money` (Purple button → opens Split Payment View)
+* `View History` (Orange button)
+
+
 
 ---
 
-### Screen 6: Groups, Splits & Settlements (`GroupsScreen.tsx`)
-- **State A: Groups Directory (When no active group is selected):**
-  - Header: Title *"Groups & Splits"* with offline guarantee badge.
-  - Educational Card: *"Transparent group expense splitting with zero-sum mathematical settlement."*
-  - Groups Card List:
-    - Group Name (e.g. *"Goa Trip"*, *"Flat 402 Bills"*).
-    - Member Avatars / Initials count.
-    - Total group expenditure formatted.
-    - Tap card → sets active group and navigates into Group Detail view.
-    - Delete group action with safety confirmation.
-  - Primary CTA: `+ Create Group` (opens `AddGroupModal`).
-- **State B: Active Group Detail View:**
-  - **Sticky Top Bar:**
-    - Back button (`< All Groups`), Group Title, Currency indicator (`INR`).
-    - Group Total Spend summary badge.
-  - **Sub-Tab Switcher:**
-    - `[ Expenses ]` | `[ Balances & Settle ]` | `[ Graph ]`
-  - **Tab 1: Group Expenses:**
-    - Chronological list of group expenses.
-    - Each item shows: Expense Title, Date, Paid By member name, Split Method badge (`Equal`, `Exact`, `Percentage`, `Shares`, `Itemized`), Total Amount.
-    - Delete expense button.
-    - Floating CTA: `+ Add Expense` (opens `AddGroupExpenseModal`).
-  - **Tab 2: Balances & Settlement Plan:**
-    - **Member Balances Section:**
-      - Cards for each participant with net standing:
-        - `Gets Back ₹31,075.00` (Emerald badge for creditors).
-        - `Owes ₹8,125.00` (Red badge for debtors).
-        - `Settled Up ₹0.00` (Subdued gray badge).
-      - Tap any member card → opens `ExplanationModal` with complete audit trail.
-    - **Simplified Debt Settlements (Min-Cash-Flow):**
-      - Explanatory header: *"Debts simplified into minimum transactions."*
-      - Settlement Transfer Cards (e.g. *"Bob pays Alice: ₹8,125.00"*).
-      - Primary Action Button: `Settle Up` → opens `SettleModal` prefilled with debtor, creditor, and amount.
-      - If all balances are zero: Full-width celebration banner *"All settled up! Group is even."*
-  - **Tab 3: Dependency Graph:**
-    - Visual financial network representation showing nodes (Members and Expenses) and directed edges (Payer contributions and participant liability shares).
-    - Mathematical transparency breakdown confirming zero-sum conservation.
+### Screen 6: Split Payment & Group Expenses (`SplitPaymentScreen.tsx`)
+
+* **Header:**
+* Navigation back button `< Split Payment`.
+* Subtitle: *"With a group of friends or individual"*.
+
+
+* **Payment Banner Card:**
+* Prompt: `You Paid ₹ 27,00`.
+* Description field: *"What's this payment for?"*
+
+
+* **Group Action Bar:**
+* Instant transaction search input.
+* Primary Button: `+ Create new group` (Green icon button).
+
+
+* **Contacts & Participants List (`All Contacts`):**
+* Searchable list showing participant avatar chips (e.g., `AJ`, `AM`, `AR`), full names (*Ajay singh*, *Aman*, *Arjit Bose*), and phone numbers.
+
+
 
 ---
 
-### Screen 7: Reports & Advanced Financial Analytics (`ReportsScreen.tsx`)
-- **Date / Period Navigator:**
-  - Month & Year picker with `< Previous` and `Next >` navigation buttons.
-- **Monthly Cashflow Card:**
-  - Income, Expenses, Net Savings, and Savings Rate % pill badge.
-- **Fixed vs. Variable Spending Breakdown Card:**
-  - Two-column stats: Fixed Spending (Bills/Rent/Utilities) vs. Variable Spending (Dining/Shopping/Groceries).
-  - Two-color segmented horizontal bar visualizing the percentage split.
-  - Explanatory footnote helping non-financial users optimize savings.
-- **Multi-Month Spending & Savings Trends:**
-  - Historical 6-month table / bar cards displaying Income vs. Expenses and resulting Savings Rate badge for each period.
-- **Category Spending Breakdown:**
-  - Ranked category progress bars with monetary amount and percentage of total expenditure.
-- **Top Merchants Leaderboard:**
-  - Ranked list of top spending destinations.
+### Screen 7: Settings & Offline Diagnostics (`SettingsScreen.tsx`)
+
+* **Appearance & Preference Settings:**
+* Theme mode toggle (`Light`, `Dark`, `System`).
+* Default currency selector (`USD ($)`, `EUR (€)`, `INR (₹)`).
+
+
+* **Data & Ledger Management:**
+* Reset onboarding flow.
+* Load demo dataset.
+* Clear local database with dual-step confirmation.
+
+
+* **Technical & Offline Diagnostics:**
+* SQLite Engine status, active schema version, and local database record counts.
+
+
 
 ---
 
-### Screen 8: Settings & Customization (`SettingsScreen.tsx`)
-- **Appearance & Themes:**
-  - Mode Switcher: `Light`, `Dark`, `System` pill buttons.
-  - Accent Color Palette: 6 circular color swatches (`Default Emerald`, `Ocean Blue`, `Forest Sage`, `Violet Indigo`, `Amber Warm`, `Rose Pink`) with live selection ring.
-- **Data & Ledger Preferences:**
-  - `Reset Onboarding`: Re-launch initial welcome guide.
-  - `Load Demo Data`: Seeds comprehensive sample accounts, transactions, budgets, goals, and trip groups.
-  - `Wipe Local Database`: Clears all local SQLite records with dual-step confirmation.
-- **Technical & Offline Diagnostics (Power-User Section at Bottom):**
-  - SQLite Engine version, local database schema migration status, accounts count, transactions count, categories count.
+## 4. Complete Modals & Action Sheets Inventory
+
+| Modal / Sheet Name | Trigger / Purpose | Key UI Elements |
+| --- | --- | --- |
+| **Global Quick Add Modal** | Central Floating Action Button (`+`) on Tab Bar | Numeric keypad, category icon picker, `Income` / `Expense` / `Transfer` toggle, account picker, note field. |
+| **Transaction Detail Sheet** | Tapping any transaction item | Metadata card, Transaction ID, debited account, expense toggle switch, `Share Receipt`, `Split Money`, `View History` actions. |
+| **Split Payment View** | `Split Money` action button | Payer amount display (`You Paid`), description field, `+ Create new group` CTA, contact list with avatar chips. |
+| **Add Goal Modal** | `+` button in Plan tab (Goals section) | Goal title input, target amount, target date selector, initial contribution slider. |
+| **Add Budget Modal** | `+` button in Plan tab (Budgets section) | Category selector, spending limit input, monthly/weekly period toggle. |
+| **Onboarding Modal** | Initial launch / Fresh install | 3D Wallet visual hero, value proposition, setup call-to-action button (*"Let's Start"*). |
 
 ---
 
-## 4. Complete Modals & Dialogs Inventory
+## 5. UI & Design System Recommendations for Figma Hand-Off
 
-| Modal Name | File Path | Trigger / Purpose | Key Inputs & UI Elements |
-| :--- | :--- | :--- | :--- |
-| **Quick Add Modal** | `src/components/QuickAddModal.tsx` | Global `+` button or Home action buttons | Segmented Type toggle (`Expense`, `Income`, `Transfer`), numeric keypad amount input, category picker, source account, destination account (for transfers), notes, merchant, recurring toggle. |
-| **Add Account Modal** | `src/components/AddAccountModal.tsx` | `+ Add Account` button in Accounts tab | Account Name, Account Type selector (Bank, Cash, Wallet, Credit, Investment), Initial Balance, Currency selector. |
-| **Add Budget Modal** | `src/components/AddBudgetModal.tsx` | `+ Set Budget` button in Budgets tab | Category picker (filtered to expense categories), Budget Amount in currency, Period selector (`Monthly` vs `Weekly`), Rollover toggle switch. |
-| **Add Goal Modal** | `src/components/AddGoalModal.tsx` | `+ New Goal` button in Goals tab | Goal Title, Target Amount, Initial Saved Balance, Target Date input with quick preset chips (`3 Months`, `6 Months`, `1 Year`, `2 Years`). |
-| **Contribute Goal Modal** | `src/components/ContributeGoalModal.tsx` | `Contribute` button on any Goal Card | Goal summary progress bar, Amount to contribute input, quick percentage chips (`+10%`, `+25%`, `+50%`). |
-| **Add Group Modal** | `src/components/AddGroupModal.tsx` | `+ Create Group` button in Groups tab | Group Name input, Currency picker, Member Name input with `+ Add Person` chip builder, Remove chip actions. |
-| **Add Group Expense Modal** | `src/components/AddGroupExpenseModal.tsx` | `+ Add Expense` button in Group view | Expense Title, Amount, Date, Paid By selector (Single member or Multiple Payers split), Split Method selector (`Equal`, `Exact`, `Percentage`, `Shares`, `Itemized`), dynamic member allocation inputs. |
-| **Settle Modal** | `src/components/SettleModal.tsx` | `Settle Up` button on simplified debt card | Payer member dropdown, Receiver member dropdown, Amount input (pre-populated), Notes, `Confirm Settlement` button. |
-| **Settlement Explanation Modal** | `src/components/ExplanationModal.tsx` | Tapping any member card in Balances tab | Full mathematical audit trail: Total paid vs total share, settlements made/received, net balance, itemized list of all contributing expenses with net contribution (+/-). |
-| **Onboarding Modal** | `src/components/OnboardingModal.tsx` | Fresh app launch | 3-step carousel with value props, privacy guarantees, and initial account setup form. |
+1. **Card Elevation & Border Hierarchy:**
+* Use soft background card fills (`#FFFFFF` in light mode, `#1E293B` in dark mode) paired with subtle ambient drop shadows (`shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 10`).
 
----
 
-## 5. UI Improvements & Figma Recommendations for Designers
+2. **Tab Bar Floating Center Alignment:**
+* The central `+` FAB should be positioned in a circular cut-out / floating container raised 16dp above the persistent bottom navigation bar.
 
-1. **Card Hierarchy & Elevation:**
-   - Implement subtle 1px border highlights (`rgba(255, 255, 255, 0.08)` in dark mode, `rgba(0, 0, 0, 0.06)` in light mode) with soft backdrop blur on cards.
-2. **Numeric Typography:**
-   - Utilize tabular numbers (`fontVariant: ['tabular-nums']`) for all currency amounts to ensure perfect vertical decimal alignment across ledgers and reports.
-3. **Micro-Interactions:**
-   - Haptic feedback (`expo-haptics`) upon transaction entry, quick action taps, and settlement confirmations.
-   - Smooth progress bar filling animations for budgets and savings goals.
-4. **Group Expense Split Ergonomics:**
-   - For `AddGroupExpenseModal`, design a streamlined quick keypad with instant sum-validation indicators (e.g. green checkmark when exact/percentage splits match total amount).
-5. **Graph Visualizations:**
-   - Design interactive SVG or Canvas node-link diagrams for the Group Dependency Graph with draggable participant bubbles.
+
+3. **Data Visualizations:**
+* **Donut Charts:** Ring thickness set to 24dp with rounded arc caps and interactive center text for key summary totals.
+* **Progress Rings:** Use semi-transparent background rings with vibrant foreground fills for category budget completion status.
+
+
+4. **Numeric Typography:**
+* Enforce fixed-width tabular numbers (`fontVariant: ['tabular-nums']`) across all transaction lists and financial reports to ensure clean vertical decimal alignment.
