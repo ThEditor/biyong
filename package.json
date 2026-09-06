@@ -11,6 +11,7 @@
     "test": "turbo run test",
     "verify": "tsx scripts/verify-phase0.ts",
     "verify:phase1": "tsx scripts/verify-phase1.ts",
+    "verify:phase2": "tsx scripts/verify-phase2.ts",
     "clean": "turbo run clean && rm -rf node_modules"
   },
   "devDependencies": {
