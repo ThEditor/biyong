@@ -1,0 +1,29 @@
+{
+  "name": "@biyong/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup src/index.ts --format esm --dts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint . --ext .ts || true"
+  },
+  "dependencies": {
+    "@biyong/database": "workspace:*",
+    "@biyong/domain": "workspace:*",
+    "@biyong/schemas": "workspace:*",
+    "@hono/node-server": "^1.13.8",
+    "dotenv": "^16.4.7",
+    "hono": "^4.7.2"
+  },
+  "devDependencies": {
+    "@biyong/config": "workspace:*",
+    "tsup": "^8.4.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  }
+}

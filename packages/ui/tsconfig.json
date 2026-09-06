@@ -1,0 +1,8 @@
+{
+  "extends": "@biyong/config/tsconfig.react.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*"]
+}

@@ -1,0 +1,32 @@
+{
+  "name": "@biyong/auth",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts",
+    "dev": "tsup src/index.ts --format esm,cjs --watch --dts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts || true"
+  },
+  "dependencies": {
+    "@biyong/schemas": "workspace:*"
+  },
+  "devDependencies": {
+    "@biyong/config": "workspace:*",
+    "tsup": "^8.4.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  }
+}

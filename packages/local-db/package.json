@@ -1,0 +1,44 @@
+{
+  "name": "@biyong/local-db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts",
+    "dev": "tsup src/index.ts --format esm,cjs --watch --dts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts || true"
+  },
+  "dependencies": {
+    "@biyong/schemas": "workspace:*",
+    "@biyong/application": "workspace:*",
+    "@biyong/domain": "workspace:*"
+  },
+  "devDependencies": {
+    "@biyong/config": "workspace:*",
+    "better-sqlite3": "^11.8.1",
+    "@types/better-sqlite3": "^7.6.12",
+    "tsup": "^8.4.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  },
+  "peerDependencies": {
+    "better-sqlite3": "^11.8.1"
+  },
+  "peerDependenciesMeta": {
+    "better-sqlite3": {
+      "optional": true
+    }
+  }
+}
