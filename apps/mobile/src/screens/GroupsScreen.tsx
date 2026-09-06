@@ -7,12 +7,20 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  Modal,
+  Platform,
 } from 'react-native';
-import { formatMoney, type DependencyGraph } from '@biyong/domain';
+import {
+  formatMoney,
+  canEditExpense,
+  canDeleteExpense,
+  type DependencyGraph,
+} from '@biyong/domain';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../theme/ThemeContext';
 import { useLedger } from '../context/LedgerContext';
 import { AddGroupModal } from '../components/AddGroupModal';
+import { JoinGroupModal } from '../components/JoinGroupModal';
 import { AddGroupExpenseModal } from '../components/AddGroupExpenseModal';
 import { SettleModal } from '../components/SettleModal';
 import { ExplanationModal } from '../components/ExplanationModal';
@@ -38,10 +46,16 @@ export const GroupsScreen: React.FC<GroupsScreenProps> = ({ onBack }) => {
     deleteGroup,
     deleteGroupExpense,
     getGroupDependencyGraph,
+    createGroupInvite,
+    user,
   } = useLedger();
 
   // Modals state
   const [isAddGroupOpen, setIsAddGroupOpen] = useState(false);
+  const [isJoinGroupOpen, setIsJoinGroupOpen] = useState(false);
+  const [inviteModalCode, setInviteModalCode] = useState<string | null>(null);
+  const [isGeneratingInvite, setIsGeneratingInvite] = useState(false);
+  const [inviteCopied, setInviteCopied] = useState(false);
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
   const [isSettleOpen, setIsSettleOpen] = useState(false);
   const [settlePrefill, setSettlePrefill] = useState<{
@@ -143,18 +157,42 @@ export const GroupsScreen: React.FC<GroupsScreenProps> = ({ onBack }) => {
               </Text>
             </View>
           </View>
-          <TouchableOpacity
-            onPress={() => setIsAddGroupOpen(true)}
-            style={[
-              styles.headerAddBtn,
-              { backgroundColor: colors.accentPrimary, borderRadius: tokens.radius.md },
-            ]}
-          >
-            <Feather name="plus" size={16} color={colors.accentForeground} />
-            <Text style={[styles.headerAddBtnText, { color: colors.accentForeground }]}>
-              New Group
-            </Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity
+              onPress={() => setIsJoinGroupOpen(true)}
+              style={[
+                styles.headerSecondaryBtn,
+                {
+                  backgroundColor: colors.surfaceSubtle,
+                  borderColor: colors.border,
+                  borderRadius: tokens.radius.md,
+                },
+              ]}
+            >
+              <Ionicons
+                name="enter-outline"
+                size={16}
+                color={colors.textPrimary}
+                style={{ marginRight: 4 }}
+              />
+              <Text style={[styles.headerSecondaryBtnText, { color: colors.textPrimary }]}>
+                Join Group
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setIsAddGroupOpen(true)}
+              style={[
+                styles.headerAddBtn,
+                { backgroundColor: colors.accentPrimary, borderRadius: tokens.radius.md },
+              ]}
+            >
+              <Feather name="plus" size={16} color={colors.accentForeground} />
+              <Text style={[styles.headerAddBtnText, { color: colors.accentForeground }]}>
+                New Group
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -290,6 +328,7 @@ export const GroupsScreen: React.FC<GroupsScreenProps> = ({ onBack }) => {
         </ScrollView>
 
         <AddGroupModal visible={isAddGroupOpen} onClose={() => setIsAddGroupOpen(false)} />
+        <JoinGroupModal visible={isJoinGroupOpen} onClose={() => setIsJoinGroupOpen(false)} />
       </View>
     );
   }
@@ -316,15 +355,59 @@ export const GroupsScreen: React.FC<GroupsScreenProps> = ({ onBack }) => {
           </Text>
         </View>
 
-        <View
-          style={[
-            styles.currencyBadge,
-            { backgroundColor: colors.surfaceSubtle, borderColor: colors.border },
-          ]}
-        >
-          <Text style={[styles.currencyBadgeText, { color: colors.accentPrimary }]}>
-            {currency}
-          </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          {!activeGroup.isPrivate && (
+            <TouchableOpacity
+              onPress={async () => {
+                setIsGeneratingInvite(true);
+                setInviteCopied(false);
+                try {
+                  const code = await createGroupInvite(activeGroup.id);
+                  setInviteModalCode(code);
+                } catch (err: any) {
+                  Alert.alert('Invite Error', err?.message || 'Failed to generate invite code.');
+                } finally {
+                  setIsGeneratingInvite(false);
+                }
+              }}
+              disabled={isGeneratingInvite}
+              style={[
+                styles.shareInviteBtn,
+                {
+                  backgroundColor: colors.accentSubtle,
+                  borderColor: colors.accentPrimary,
+                  borderRadius: tokens.radius.sm,
+                },
+              ]}
+            >
+              {isGeneratingInvite ? (
+                <ActivityIndicator size="small" color={colors.accentPrimary} />
+              ) : (
+                <>
+                  <Ionicons
+                    name="share-social-outline"
+                    size={14}
+                    color={colors.accentPrimary}
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text style={[styles.shareInviteBtnText, { color: colors.accentPrimary }]}>
+                    Share Invite
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+
+          <View
+            style={[
+              styles.currencyBadge,
+              { backgroundColor: colors.surfaceSubtle, borderColor: colors.border },
+            ]}
+          >
+            <Text style={[styles.currencyBadgeText, { color: colors.accentPrimary }]}>
+              {currency}
+            </Text>
+          </View>
         </View>
       </View>
 
@@ -450,6 +533,26 @@ export const GroupsScreen: React.FC<GroupsScreenProps> = ({ onBack }) => {
                   })
                   .join(', ');
 
+                // Creator attribution
+                let creatorName = 'You';
+                if (exp.createdByUserId) {
+                  if (user?.id && exp.createdByUserId === user.id) {
+                    creatorName = 'You';
+                  } else {
+                    const match = activeGroupMembers.find((m) => m.userId === exp.createdByUserId);
+                    creatorName = match ? match.name : 'Another Member';
+                  }
+                } else if (exp.createdByMemberId) {
+                  const match = activeGroupMembers.find((m) => m.id === exp.createdByMemberId);
+                  if (match) {
+                    creatorName = match.name.toLowerCase() === 'you' ? 'You' : match.name;
+                  }
+                }
+
+                const currentUserId = user?.id ?? '';
+                const canEdit = canEditExpense(currentUserId, exp);
+                const canDelete = canDeleteExpense(currentUserId, exp, activeGroup.ownerId);
+
                 return (
                   <View
                     key={exp.id}
@@ -463,9 +566,29 @@ export const GroupsScreen: React.FC<GroupsScreenProps> = ({ onBack }) => {
                     ]}
                   >
                     <View style={styles.expenseCardLeft}>
-                      <Text style={[styles.expenseTitle, { color: colors.textPrimary }]}>
-                        {exp.title}
-                      </Text>
+                      <View style={styles.expenseTitleRow}>
+                        <Text style={[styles.expenseTitle, { color: colors.textPrimary }]}>
+                          {exp.title}
+                        </Text>
+                        {!canEdit && (
+                          <View
+                            style={[
+                              styles.readOnlyBadge,
+                              {
+                                backgroundColor: colors.surfaceSubtle,
+                                borderColor: colors.border,
+                                borderRadius: 4,
+                              },
+                            ]}
+                          >
+                            <Feather name="lock" size={10} color={colors.textMuted} style={{ marginRight: 3 }} />
+                            <Text style={[styles.readOnlyText, { color: colors.textMuted }]}>
+                              Read-only
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+
                       <View style={styles.expenseMetaRow}>
                         <Text style={[styles.expenseMetaText, { color: colors.textMuted }]}>
                           {exp.date} • Paid by{' '}
@@ -488,6 +611,23 @@ export const GroupsScreen: React.FC<GroupsScreenProps> = ({ onBack }) => {
                           </Text>
                         </View>
                       </View>
+
+                      {/* Creator Attribution */}
+                      <View style={styles.attributionRow}>
+                        <Ionicons
+                          name="person-circle-outline"
+                          size={12}
+                          color={colors.textMuted}
+                          style={{ marginRight: 4 }}
+                        />
+                        <Text style={[styles.attributionText, { color: colors.textMuted }]}>
+                          Added by{' '}
+                          <Text style={{ color: colors.textSecondary, fontWeight: '600' }}>
+                            {creatorName}
+                          </Text>
+                        </Text>
+                      </View>
+
                       {exp.notes && (
                         <Text
                           style={[styles.expenseNotes, { color: colors.textMuted }]}
@@ -502,13 +642,19 @@ export const GroupsScreen: React.FC<GroupsScreenProps> = ({ onBack }) => {
                       <Text style={[styles.expenseAmount, { color: colors.textPrimary }]}>
                         {formatMoney(exp.amountMinor, currency)}
                       </Text>
-                      <TouchableOpacity
-                        onPress={() => handleDeleteExpenseConfirm(exp.id, exp.title)}
-                        style={styles.deleteExpenseBtn}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      >
-                        <Feather name="trash-2" size={15} color={colors.danger} />
-                      </TouchableOpacity>
+                      {canDelete ? (
+                        <TouchableOpacity
+                          onPress={() => handleDeleteExpenseConfirm(exp.id, exp.title)}
+                          style={styles.deleteExpenseBtn}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Feather name="trash-2" size={15} color={colors.danger} />
+                        </TouchableOpacity>
+                      ) : (
+                        <View style={styles.disabledLockBtn}>
+                          <Feather name="lock" size={13} color={colors.textMuted} />
+                        </View>
+                      )}
                     </View>
                   </View>
                 );
@@ -984,6 +1130,98 @@ export const GroupsScreen: React.FC<GroupsScreenProps> = ({ onBack }) => {
         onClose={() => setSelectedExplanationMemberId(null)}
         memberId={selectedExplanationMemberId}
       />
+
+      {/* Invite Code Modal */}
+      <Modal
+        visible={inviteModalCode !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setInviteModalCode(null)}
+      >
+        <View style={styles.inviteModalOverlay}>
+          <View
+            style={[
+              styles.inviteModalCard,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.borderStrong,
+                borderRadius: tokens.radius.lg,
+              },
+            ]}
+          >
+            <View style={styles.inviteModalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Ionicons
+                  name="key-outline"
+                  size={20}
+                  color={colors.accentPrimary}
+                  style={{ marginRight: 8 }}
+                />
+                <Text style={[styles.inviteModalTitle, { color: colors.textPrimary }]}>
+                  Invite Friends
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setInviteModalCode(null)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Feather name="x" size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={[styles.inviteModalSubtitle, { color: colors.textSecondary }]}>
+              Share this code with friends so they can join "{activeGroup?.name}".
+            </Text>
+
+            <View
+              style={[
+                styles.codeDisplayBox,
+                {
+                  backgroundColor: colors.surfaceSubtle,
+                  borderColor: colors.accentPrimary,
+                  borderRadius: tokens.radius.md,
+                },
+              ]}
+            >
+              <Text style={[styles.codeDisplayText, { color: colors.textPrimary }]}>
+                {inviteModalCode}
+              </Text>
+            </View>
+
+            <View style={styles.inviteActionsRow}>
+              <TouchableOpacity
+                onPress={() => {
+                  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText && inviteModalCode) {
+                    navigator.clipboard.writeText(inviteModalCode).catch(() => {});
+                  }
+                  setInviteCopied(true);
+                  Alert.alert(
+                    'Code Ready to Share',
+                    `Invite code "${inviteModalCode}" copied. Give this code to your friends to enter on the "Join Group" screen.`
+                  );
+                }}
+                style={[
+                  styles.copyCodeBtn,
+                  {
+                    backgroundColor: inviteCopied ? colors.success : colors.accentPrimary,
+                    borderRadius: tokens.radius.md,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={inviteCopied ? 'checkmark' : 'copy-outline'}
+                  size={16}
+                  color={colors.accentForeground}
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={[styles.copyCodeBtnText, { color: colors.accentForeground }]}>
+                  {inviteCopied ? 'Code Copied' : 'Copy Code'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -1475,6 +1713,114 @@ const styles = StyleSheet.create({
   },
   edgeBadgeText: {
     fontSize: 10,
+    fontWeight: '700',
+  },
+  headerSecondaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+  },
+  headerSecondaryBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  shareInviteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+  },
+  shareInviteBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  expenseTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  readOnlyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderWidth: 1,
+  },
+  readOnlyText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  attributionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  attributionText: {
+    fontSize: 11,
+  },
+  disabledLockBtn: {
+    padding: 6,
+    opacity: 0.5,
+  },
+  inviteModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  inviteModalCard: {
+    width: '100%',
+    maxWidth: 380,
+    borderWidth: 1,
+    padding: 20,
+  },
+  inviteModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  inviteModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  inviteModalSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  codeDisplayBox: {
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    marginBottom: 16,
+  },
+  codeDisplayText: {
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: 3,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  inviteActionsRow: {
+    flexDirection: 'row',
+    marginTop: 4,
+  },
+  copyCodeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  copyCodeBtnText: {
+    fontSize: 14,
     fontWeight: '700',
   },
 });

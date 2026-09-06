@@ -1,5 +1,14 @@
 import React from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, Alert, View, ActivityIndicator } from 'react-native';
+import {
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  Alert,
+  View,
+  ActivityIndicator,
+  TextInput,
+  Platform,
+} from 'react-native';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import {
   Box,
@@ -41,7 +50,50 @@ export const SettingsScreen: React.FC = () => {
     openAuthModal,
     logout,
     syncNow,
+    apiUrl,
+    setApiUrl,
+    testApiConnection,
   } = useLedger();
+
+  const [inputUrl, setInputUrl] = React.useState(apiUrl);
+  const [isTestingApi, setIsTestingApi] = React.useState(false);
+  const [testResult, setTestResult] = React.useState<{ ok: boolean; message: string } | null>(null);
+  const [isSavingUrl, setIsSavingUrl] = React.useState(false);
+
+  React.useEffect(() => {
+    setInputUrl(apiUrl);
+  }, [apiUrl]);
+
+  const handleTestConnection = async () => {
+    setIsTestingApi(true);
+    setTestResult(null);
+    try {
+      const res = await testApiConnection(inputUrl);
+      setTestResult(res);
+    } catch (err: any) {
+      setTestResult({ ok: false, message: err?.message || 'Connection failed' });
+    } finally {
+      setIsTestingApi(false);
+    }
+  };
+
+  const handleSaveApiUrl = async () => {
+    setIsSavingUrl(true);
+    setTestResult(null);
+    try {
+      await setApiUrl(inputUrl);
+      Alert.alert('Server URL Saved', `Backend API URL set to ${inputUrl.trim().replace(/\/+$/, '')}`);
+    } catch (err: any) {
+      Alert.alert('Invalid URL', err?.message || 'Failed to save backend URL.');
+    } finally {
+      setIsSavingUrl(false);
+    }
+  };
+
+  const handlePresetSelect = (preset: string) => {
+    setInputUrl(preset);
+    setTestResult(null);
+  };
 
   const handleSignOut = () => {
     Alert.alert(
@@ -329,6 +381,200 @@ export const SettingsScreen: React.FC = () => {
               </TouchableOpacity>
             </>
           )}
+        </VStack>
+
+        {/* Server & Network Configuration Section */}
+        <VStack space="sm">
+          <Text color={colors.textPrimary} fontSize={12} fontWeight="bold" letterSpacing={0.8}>
+            SERVER & NETWORK CONFIGURATION
+          </Text>
+
+          <Card
+            backgroundColor={colors.surface}
+            borderColor={colors.border}
+            borderWidth={1}
+            borderRadius={tokens.radius.md}
+            p={tokens.spacing.md}
+          >
+            <HStack justifyContent="space-between" alignItems="center" mb={10}>
+              <Text color={colors.textSecondary} fontSize={12} fontWeight="bold" letterSpacing={0.5}>
+                BACKEND API URL
+              </Text>
+              <View
+                style={[
+                  styles.devicePill,
+                  { backgroundColor: colors.surfaceSubtle, borderColor: colors.border },
+                ]}
+              >
+                <Ionicons name="server-outline" size={11} color={colors.textMuted} />
+                <Text style={{ color: colors.textMuted, fontSize: 10, fontWeight: '600' }}>
+                  {apiUrl}
+                </Text>
+              </View>
+            </HStack>
+
+            <TextInput
+              value={inputUrl}
+              onChangeText={(text) => {
+                setInputUrl(text);
+                setTestResult(null);
+              }}
+              placeholder="http://localhost:3000"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={[
+                styles.urlInput,
+                {
+                  backgroundColor: colors.surfaceSubtle,
+                  borderColor: colors.border,
+                  color: colors.textPrimary,
+                  borderRadius: tokens.radius.sm,
+                },
+              ]}
+            />
+
+            {/* Quick Presets */}
+            <VStack space="xs" mt={10} mb={12}>
+              <Text color={colors.textMuted} fontSize={11} fontWeight="600">
+                QUICK PRESETS
+              </Text>
+              <HStack space="xs" flexWrap="wrap">
+                <TouchableOpacity
+                  onPress={() => handlePresetSelect('http://localhost:3000')}
+                  activeOpacity={0.7}
+                  style={[
+                    styles.presetPill,
+                    {
+                      backgroundColor: inputUrl === 'http://localhost:3000' ? colors.accentSubtle : colors.surfaceSubtle,
+                      borderColor: inputUrl === 'http://localhost:3000' ? colors.accentPrimary : colors.border,
+                      borderRadius: tokens.radius.sm,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.presetPillText,
+                      {
+                        color: inputUrl === 'http://localhost:3000' ? colors.accentPrimary : colors.textSecondary,
+                        fontWeight: inputUrl === 'http://localhost:3000' ? '700' : '500',
+                      },
+                    ]}
+                  >
+                    Localhost:3000
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => handlePresetSelect('http://10.0.2.2:3000')}
+                  activeOpacity={0.7}
+                  style={[
+                    styles.presetPill,
+                    {
+                      backgroundColor: inputUrl === 'http://10.0.2.2:3000' ? colors.accentSubtle : colors.surfaceSubtle,
+                      borderColor: inputUrl === 'http://10.0.2.2:3000' ? colors.accentPrimary : colors.border,
+                      borderRadius: tokens.radius.sm,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.presetPillText,
+                      {
+                        color: inputUrl === 'http://10.0.2.2:3000' ? colors.accentPrimary : colors.textSecondary,
+                        fontWeight: inputUrl === 'http://10.0.2.2:3000' ? '700' : '500',
+                      },
+                    ]}
+                  >
+                    Android Emulator (10.0.2.2:3000)
+                  </Text>
+                </TouchableOpacity>
+              </HStack>
+            </VStack>
+
+            {/* Test result status pill */}
+            {testResult && (
+              <View
+                style={[
+                  styles.testResultPill,
+                  {
+                    backgroundColor: testResult.ok ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    borderColor: testResult.ok ? colors.success : colors.danger,
+                    borderRadius: tokens.radius.sm,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={testResult.ok ? 'checkmark-circle-outline' : 'alert-circle-outline'}
+                  size={14}
+                  color={testResult.ok ? colors.success : colors.danger}
+                  style={{ marginRight: 6 }}
+                />
+                <Text
+                  style={{
+                    color: testResult.ok ? colors.success : colors.danger,
+                    fontSize: 12,
+                    fontWeight: '600',
+                    flex: 1,
+                  }}
+                >
+                  {testResult.message}
+                </Text>
+              </View>
+            )}
+
+            {/* Action Row */}
+            <HStack space="xs" mt={8}>
+              <TouchableOpacity
+                onPress={handleTestConnection}
+                disabled={isTestingApi}
+                style={[
+                  styles.networkActionBtn,
+                  {
+                    backgroundColor: colors.surfaceSubtle,
+                    borderColor: colors.border,
+                    borderWidth: 1,
+                    borderRadius: tokens.radius.md,
+                    flex: 1,
+                  },
+                ]}
+                activeOpacity={0.8}
+              >
+                {isTestingApi ? (
+                  <ActivityIndicator size="small" color={colors.accentPrimary} style={{ marginRight: 6 }} />
+                ) : (
+                  <Ionicons name="flash-outline" size={14} color={colors.accentPrimary} style={{ marginRight: 6 }} />
+                )}
+                <Text style={{ color: colors.accentPrimary, fontSize: 12, fontWeight: '700' }}>
+                  {isTestingApi ? 'Testing...' : 'Test Connection'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleSaveApiUrl}
+                disabled={isSavingUrl || inputUrl.trim().replace(/\/+$/, '') === apiUrl}
+                style={[
+                  styles.networkActionBtn,
+                  {
+                    backgroundColor: colors.accentPrimary,
+                    borderRadius: tokens.radius.md,
+                    flex: 1,
+                    opacity: isSavingUrl || inputUrl.trim().replace(/\/+$/, '') === apiUrl ? 0.6 : 1,
+                  },
+                ]}
+                activeOpacity={0.8}
+              >
+                {isSavingUrl ? (
+                  <ActivityIndicator size="small" color={colors.accentForeground} style={{ marginRight: 6 }} />
+                ) : (
+                  <Ionicons name="save-outline" size={14} color={colors.accentForeground} style={{ marginRight: 6 }} />
+                )}
+                <Text style={{ color: colors.accentForeground, fontSize: 12, fontWeight: '700' }}>
+                  Save URL
+                </Text>
+              </TouchableOpacity>
+            </HStack>
+          </Card>
         </VStack>
 
         {/* Appearance Section */}
@@ -672,5 +918,43 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 12,
     borderWidth: 1,
+  },
+  urlInput: {
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  presetPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+  },
+  presetPillText: {
+    fontSize: 11,
+  },
+  testResultPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  networkActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+  },
+  devicePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    gap: 4,
   },
 });

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { Platform } from 'react-native';
 import type {
   Account,
   Category,
@@ -13,24 +14,28 @@ import type {
   SyncStatus,
   SyncOperation,
 } from '@biyong/schemas';
-import type {
-  BudgetStatus,
-  GoalProgress,
-  FixedVsVariableSpending,
-  SpendingTrendItem,
-  SimplifiedTransfer,
-  MemberSettlementExplanation,
-  DependencyGraph,
+import {
+  canEditExpense,
+  canDeleteExpense,
+  type BudgetStatus,
+  type GoalProgress,
+  type FixedVsVariableSpending,
+  type SpendingTrendItem,
+  type SimplifiedTransfer,
+  type MemberSettlementExplanation,
+  type DependencyGraph,
 } from '@biyong/domain';
 import type { AccountWithDerivedBalance } from '@biyong/application';
 import {
   InMemoryAuthService,
+  HttpAuthService,
   createGuestSession,
   buildGuestMigrationPlan,
 } from '@biyong/auth';
 import {
   SyncEngine,
   createSyncOperation,
+  HttpSyncServerClient,
   type SyncServerClient,
 } from '@biyong/sync';
 import { initDatabase, type LedgerDatabaseServices } from '../db/sqlite-driver';
@@ -85,8 +90,26 @@ class MobileSyncServerClient implements SyncServerClient {
   }
 }
 
+const getDefaultApiUrl = (): string => {
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL.replace(/\/+$/, '');
+  }
+  return Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
+};
+
 const defaultSyncServerClient = new MobileSyncServerClient();
 const defaultAuthService = new InMemoryAuthService();
+
+let activeAuthToken: string | null = null;
+let currentApiUrl = getDefaultApiUrl();
+let httpSyncClient = new HttpSyncServerClient(currentApiUrl, () => activeAuthToken);
+let httpAuthService = new HttpAuthService(currentApiUrl);
+
+function updateHttpClients(newUrl: string) {
+  currentApiUrl = newUrl;
+  httpSyncClient = new HttpSyncServerClient(newUrl, () => activeAuthToken);
+  httpAuthService = new HttpAuthService(newUrl);
+}
 
 export interface DatabaseStats {
   accountsCount: number;
@@ -148,9 +171,20 @@ export interface LedgerContextValue {
   deleteGoal: (id: string) => Promise<void>;
 
   // Group actions
-  createGroup: (name: string, currency?: string, memberNames?: string[]) => Promise<Group>;
+  createGroup: (
+    name: string,
+    currency?: string,
+    memberNames?: string[],
+    isPrivate?: boolean
+  ) => Promise<Group>;
+  joinGroup: (inviteCode: string) => Promise<Group>;
+  createGroupInvite: (groupId: string) => Promise<string>;
   selectGroup: (id: string | null) => Promise<void>;
-  addGroupExpense: (expenseData: Omit<GroupExpense, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  addGroupExpense: (
+    expenseData: Omit<GroupExpense, 'id' | 'createdAt' | 'updatedAt' | 'createdByUserId'> & {
+      createdByUserId?: string | null;
+    }
+  ) => Promise<void>;
   recordSettlement: (settlementData: Omit<Settlement, 'id' | 'settledAt'>) => Promise<void>;
   deleteGroupExpense: (id: string) => Promise<void>;
   deleteGroup: (id: string) => Promise<void>;
@@ -192,6 +226,11 @@ export interface LedgerContextValue {
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   syncNow: () => Promise<void>;
+
+  // Server & Network Configuration
+  apiUrl: string;
+  setApiUrl: (url: string) => Promise<void>;
+  testApiConnection: (url?: string) => Promise<{ ok: boolean; message: string }>;
 }
 
 const LedgerContext = createContext<LedgerContextValue | null>(null);
@@ -226,6 +265,11 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+
+  // Server & Network Configuration state
+  const [apiUrl, setApiUrlState] = useState<string>(getDefaultApiUrl());
+  const apiUrlRef = useRef<string>(getDefaultApiUrl());
+  apiUrlRef.current = apiUrl;
 
   // Groups & Splits state
   const [groups, setGroups] = useState<Group[]>([]);
@@ -348,16 +392,30 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setDeviceId(curDeviceId);
         deviceIdRef.current = curDeviceId;
 
+        // Check backend API URL preference
+        const savedApiUrl = await s.driver.queryOne<{ value: string }>(
+          'SELECT value FROM app_preferences WHERE key = ?',
+          ['backend_api_url']
+        );
+        if (savedApiUrl?.value) {
+          const cleanUrl = savedApiUrl.value.trim().replace(/\/+$/, '');
+          setApiUrlState(cleanUrl);
+          apiUrlRef.current = cleanUrl;
+          updateHttpClients(cleanUrl);
+        }
+
         // Check active session
         const savedToken = await s.syncStateRepo.getAuthToken();
         const savedUser = await s.syncStateRepo.getActiveUser();
         if (savedToken && savedUser) {
           setToken(savedToken);
           setUser(savedUser);
+          activeAuthToken = savedToken;
           setIsGuest(false);
         } else {
           setUser(null);
           setToken(null);
+          activeAuthToken = null;
           setIsGuest(true);
         }
 
@@ -866,6 +924,7 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       currency: 'INR',
       date: exp1Time.substring(0, 10),
       createdByMemberId: memberAliceId,
+      createdByUserId: null,
       payers: [{ memberId: memberAliceId, amountMinor: 900000 }],
       splitMethod: 'equal',
       allocations: [
@@ -886,6 +945,7 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       currency: 'INR',
       date: exp2Time.substring(0, 10),
       createdByMemberId: memberYouId,
+      createdByUserId: null,
       payers: [{ memberId: memberYouId, amountMinor: 450000 }],
       splitMethod: 'equal',
       allocations: [
@@ -906,6 +966,7 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       currency: 'INR',
       date: today,
       createdByMemberId: memberBobId,
+      createdByUserId: null,
       payers: [{ memberId: memberBobId, amountMinor: 120000 }],
       splitMethod: 'equal',
       allocations: [
@@ -960,60 +1021,6 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     [services]
   );
 
-  const createGroup = useCallback(
-    async (name: string, currency?: string, memberNames?: string[]): Promise<Group> => {
-      if (!services) throw new Error('Database not ready');
-      const now = new Date().toISOString();
-      const groupId = generateId('grp');
-      const ownerMemberId = generateId('mbr');
-      const curr = currency ?? 'INR';
-
-      const group: Group = {
-        id: groupId,
-        name: name.trim(),
-        isPrivate: true,
-        ownerId: ownerMemberId,
-        currency: curr,
-        createdAt: now,
-        updatedAt: now,
-      };
-
-      const initialMembers: GroupMember[] = [
-        {
-          id: ownerMemberId,
-          groupId,
-          name: 'You',
-          userId: null,
-          isDummy: true,
-          role: 'owner',
-          createdAt: now,
-        },
-      ];
-
-      if (memberNames && memberNames.length > 0) {
-        for (const mName of memberNames) {
-          const trimmed = mName.trim();
-          if (trimmed && trimmed.toLowerCase() !== 'you') {
-            initialMembers.push({
-              id: generateId('mbr'),
-              groupId,
-              name: trimmed,
-              userId: null,
-              isDummy: true,
-              role: 'member',
-              createdAt: now,
-            });
-          }
-        }
-      }
-
-      await services.groupUseCases.createGroup(group, initialMembers);
-      await refreshLedger();
-      return group;
-    },
-    [services, refreshLedger]
-  );
-
   const selectGroup = useCallback(
     async (id: string | null) => {
       setActiveGroupId(id);
@@ -1038,20 +1045,322 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     [services]
   );
 
+  const createGroup = useCallback(
+    async (
+      name: string,
+      currency?: string,
+      memberNames?: string[],
+      isPrivate?: boolean
+    ): Promise<Group> => {
+      if (!services) throw new Error('Database not ready');
+      const now = new Date().toISOString();
+      const groupId = generateId('grp');
+      const ownerMemberId = generateId('mbr');
+      const curr = currency ?? 'INR';
+      const trimmedName = name.trim();
+      const groupIsPrivate = isPrivate ?? true;
+
+      // If shared group and user is logged in, attempt API creation first
+      if (!groupIsPrivate && user) {
+        try {
+          const res = await fetch(`${apiUrlRef.current}/groups`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({
+              name: trimmedName,
+              currency: curr,
+            }),
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            const serverGroup: Group = data.group;
+            const serverMember: GroupMember = data.member;
+
+            await services.groupRepo.create(serverGroup);
+            await services.groupRepo.addMember(serverMember);
+
+            if (memberNames && memberNames.length > 0) {
+              for (const mName of memberNames) {
+                const trimmed = mName.trim();
+                if (
+                  trimmed &&
+                  trimmed.toLowerCase() !== 'you' &&
+                  trimmed.toLowerCase() !== (user.name || '').toLowerCase()
+                ) {
+                  const extraMember: GroupMember = {
+                    id: generateId('mbr'),
+                    groupId: serverGroup.id,
+                    name: trimmed,
+                    userId: null,
+                    isDummy: true,
+                    role: 'member',
+                    createdAt: now,
+                  };
+                  await services.groupRepo.addMember(extraMember);
+                }
+              }
+            }
+
+            await refreshLedger();
+            return serverGroup;
+          }
+        } catch {
+          // Network unreachable, fall through to offline local creation
+        }
+      }
+
+      // Local creation (offline fallback or private group)
+      const group: Group = {
+        id: groupId,
+        name: trimmedName,
+        isPrivate: groupIsPrivate,
+        ownerId: user?.id || ownerMemberId,
+        currency: curr,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      const initialMembers: GroupMember[] = [
+        {
+          id: ownerMemberId,
+          groupId,
+          name: user?.name || 'You',
+          userId: user?.id ?? null,
+          isDummy: !user,
+          role: 'owner',
+          createdAt: now,
+        },
+      ];
+
+      if (memberNames && memberNames.length > 0) {
+        for (const mName of memberNames) {
+          const trimmed = mName.trim();
+          if (
+            trimmed &&
+            trimmed.toLowerCase() !== 'you' &&
+            trimmed.toLowerCase() !== (user?.name || '').toLowerCase()
+          ) {
+            initialMembers.push({
+              id: generateId('mbr'),
+              groupId,
+              name: trimmed,
+              userId: null,
+              isDummy: true,
+              role: 'member',
+              createdAt: now,
+            });
+          }
+        }
+      }
+
+      await services.groupUseCases.createGroup(group, initialMembers);
+
+      // If shared group (offline created), enqueue sync operations
+      if (!groupIsPrivate) {
+        const opGroup = createSyncOperation({
+          entityType: 'group',
+          entityId: group.id,
+          operationType: 'create',
+          payload: group as unknown as Record<string, unknown>,
+          deviceId: deviceIdRef.current || 'device_default',
+        });
+        await services.outboxRepo.enqueue(opGroup);
+
+        for (const mem of initialMembers) {
+          const opMember = createSyncOperation({
+            entityType: 'group_member',
+            entityId: mem.id,
+            operationType: 'create',
+            payload: mem as unknown as Record<string, unknown>,
+            deviceId: deviceIdRef.current || 'device_default',
+          });
+          await services.outboxRepo.enqueue(opMember);
+        }
+
+        const pCount = await services.outboxRepo.getPendingCount();
+        setPendingSyncCount(pCount);
+      }
+
+      await refreshLedger();
+      return group;
+    },
+    [services, user, token, refreshLedger]
+  );
+
+  const joinGroup = useCallback(
+    async (inviteCode: string): Promise<Group> => {
+      if (!services) throw new Error('Database not ready');
+      const trimmedCode = inviteCode.trim().toUpperCase();
+      if (!trimmedCode) {
+        throw new Error('Please enter a valid invite code');
+      }
+
+      if (!user) {
+        throw new Error('Please log in to join a shared group');
+      }
+
+      try {
+        const res = await fetch(`${apiUrlRef.current}/groups/join`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ inviteCode: trimmedCode }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => null);
+          const msg =
+            errData?.error ||
+            errData?.message ||
+            'Failed to join group. Please verify the invite code.';
+          throw new Error(msg);
+        }
+
+        const data: { group: Group; member: GroupMember; message?: string } = await res.json();
+        const existingGroup = await services.groupRepo.findById(data.group.id);
+        if (!existingGroup) {
+          await services.groupRepo.create(data.group);
+        }
+        const existingMembers = await services.groupRepo.getMembers(data.group.id);
+        if (!existingMembers.some((m) => m.id === data.member.id)) {
+          await services.groupRepo.addMember(data.member);
+        }
+
+        // Attempt fetching full group summary (members, expenses, settlements)
+        try {
+          const detailsRes = await fetch(`${apiUrlRef.current}/groups/${data.group.id}`, {
+            headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          });
+          if (detailsRes.ok) {
+            const details = await detailsRes.json();
+            for (const m of details.members || []) {
+              const curMems = await services.groupRepo.getMembers(data.group.id);
+              if (!curMems.some((x) => x.id === m.id)) {
+                await services.groupRepo.addMember(m);
+              }
+            }
+            for (const exp of details.expenses || []) {
+              const curExps = await services.groupRepo.getExpenses(data.group.id);
+              if (!curExps.some((x) => x.id === exp.id)) {
+                await services.groupRepo.addExpense(exp);
+              }
+            }
+            for (const stl of details.settlements || []) {
+              const curStls = await services.groupRepo.getSettlements(data.group.id);
+              if (!curStls.some((x) => x.id === stl.id)) {
+                await services.groupRepo.addSettlement(stl);
+              }
+            }
+          }
+        } catch {
+          // Secondary fetch failure is non-blocking
+        }
+
+        await refreshLedger();
+        await selectGroup(data.group.id);
+        return data.group;
+      } catch (err: any) {
+        if (err instanceof Error) {
+          throw err;
+        }
+        throw new Error('Unable to connect to server. Please try again later.');
+      }
+    },
+    [services, user, token, refreshLedger, selectGroup]
+  );
+
+  const createGroupInvite = useCallback(
+    async (groupId: string): Promise<string> => {
+      if (!services) throw new Error('Database not ready');
+
+      // If user is logged in, try API invite endpoint
+      if (token) {
+        try {
+          const res = await fetch(`${apiUrlRef.current}/groups/${groupId}/invites`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({}),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.invitation?.inviteCode) {
+              return data.invitation.inviteCode;
+            }
+          }
+        } catch {
+          // Network unreachable, fall through to offline generation
+        }
+      }
+
+      // Offline fallback: generate random INV-XXXXXX
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let codePart = '';
+      for (let i = 0; i < 6; i++) {
+        codePart += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      const fallbackCode = `INV-${codePart}`;
+
+      // Enqueue sync operation for invite creation
+      const op = createSyncOperation({
+        entityType: 'group_invitation',
+        entityId: generateId('inv'),
+        operationType: 'create',
+        payload: {
+          groupId,
+          inviteCode: fallbackCode,
+          inviterUserId: user?.id ?? null,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+        },
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
+
+      return fallbackCode;
+    },
+    [services, token, user]
+  );
+
   const addGroupExpense = useCallback(
-    async (expenseData: Omit<GroupExpense, 'id' | 'createdAt' | 'updatedAt'>) => {
+    async (
+      expenseData: Omit<GroupExpense, 'id' | 'createdAt' | 'updatedAt' | 'createdByUserId'> & {
+        createdByUserId?: string | null;
+      }
+    ) => {
       if (!services) throw new Error('Database not ready');
       const now = new Date().toISOString();
       const newExpense: GroupExpense = {
         ...expenseData,
         id: generateId('gexp'),
+        createdByUserId: expenseData.createdByUserId ?? user?.id ?? null,
         createdAt: now,
         updatedAt: now,
       };
       await services.groupUseCases.addExpense(newExpense);
+      const op = createSyncOperation({
+        entityType: 'group_expense',
+        entityId: newExpense.id,
+        operationType: 'create',
+        payload: newExpense as unknown as Record<string, unknown>,
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
       await refreshActiveGroup(expenseData.groupId);
     },
-    [services, refreshActiveGroup]
+    [services, user, refreshActiveGroup]
   );
 
   const recordSettlement = useCallback(
@@ -1064,6 +1373,16 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         settledAt: now,
       };
       await services.groupUseCases.addSettlement(newSettlement);
+      const op = createSyncOperation({
+        entityType: 'settlement',
+        entityId: newSettlement.id,
+        operationType: 'create',
+        payload: newSettlement as unknown as Record<string, unknown>,
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
       await refreshActiveGroup(settlementData.groupId);
     },
     [services, refreshActiveGroup]
@@ -1073,6 +1392,16 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     async (id: string) => {
       if (!services) throw new Error('Database not ready');
       await services.groupUseCases.deleteExpense(id);
+      const op = createSyncOperation({
+        entityType: 'group_expense',
+        entityId: id,
+        operationType: 'delete',
+        payload: { id },
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
       if (activeGroupIdRef.current) {
         await refreshActiveGroup(activeGroupIdRef.current);
       }
@@ -1084,6 +1413,16 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     async (id: string) => {
       if (!services) throw new Error('Database not ready');
       await services.groupUseCases.deleteGroup(id);
+      const op = createSyncOperation({
+        entityType: 'group',
+        entityId: id,
+        operationType: 'delete',
+        payload: { id },
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
       if (activeGroupIdRef.current === id) {
         setActiveGroupId(null);
         activeGroupIdRef.current = null;
@@ -1181,9 +1520,10 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     try {
       setSyncStatus('syncing');
       const dId = deviceIdRef.current || 'device_default';
+      const client = token ? httpSyncClient : defaultSyncServerClient;
       const syncEngine = new SyncEngine(
         services.outboxRepo,
-        defaultSyncServerClient,
+        client,
         services.syncStateRepo,
         dId,
         {
@@ -1194,7 +1534,25 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           groupRepo: services.groupRepo,
         }
       );
-      await syncEngine.synchronize();
+      try {
+        await syncEngine.synchronize();
+      } catch {
+        // Fallback to default in-memory sync client if HTTP client is unreachable
+        const fallbackEngine = new SyncEngine(
+          services.outboxRepo,
+          defaultSyncServerClient,
+          services.syncStateRepo,
+          dId,
+          {
+            accountRepo: services.accountRepo,
+            txRepo: services.txRepo,
+            budgetRepo: services.budgetRepo,
+            goalRepo: services.goalRepo,
+            groupRepo: services.groupRepo,
+          }
+        );
+        await fallbackEngine.synchronize();
+      }
       const now = new Date().toISOString();
       await services.syncStateRepo.set('last_synced_at', now);
       setLastSyncedAt(now);
@@ -1206,17 +1564,23 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       console.error('Failed to sync:', err);
       setSyncStatus('error');
     }
-  }, [services, refreshLedger]);
+  }, [services, token, refreshLedger]);
 
   const login = useCallback(
     async (email: string, password: string) => {
       if (!services) throw new Error('Database not ready');
       const dId = deviceIdRef.current || 'device_default';
-      const res = await defaultAuthService.login({ email, password }, dId);
+      let res;
+      try {
+        res = await httpAuthService.login({ email, password });
+      } catch {
+        res = await defaultAuthService.login({ email, password }, dId);
+      }
       await services.syncStateRepo.setAuthToken(res.token);
       await services.syncStateRepo.setActiveUser(res.user);
       setUser(res.user);
       setToken(res.token);
+      activeAuthToken = res.token;
       setIsGuest(false);
       setIsAuthModalOpen(false);
       await syncNow();
@@ -1228,7 +1592,12 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     async (name: string, email: string, password: string) => {
       if (!services) throw new Error('Database not ready');
       const dId = deviceIdRef.current || 'device_default';
-      const res = await defaultAuthService.register({ name, email, password }, dId);
+      let res;
+      try {
+        res = await httpAuthService.register({ name, email, password });
+      } catch {
+        res = await defaultAuthService.register({ name, email, password }, dId);
+      }
       await services.syncStateRepo.setAuthToken(res.token);
       await services.syncStateRepo.setActiveUser(res.user);
 
@@ -1245,6 +1614,7 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       setUser(res.user);
       setToken(res.token);
+      activeAuthToken = res.token;
       setIsGuest(false);
       setIsAuthModalOpen(false);
       await syncNow();
@@ -1256,11 +1626,16 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (!services) return;
     if (token) {
       try {
-        await defaultAuthService.logout(token);
+        await httpAuthService.logout(token);
       } catch {
-        // ignore
+        try {
+          await defaultAuthService.logout(token);
+        } catch {
+          // ignore
+        }
       }
     }
+    activeAuthToken = null;
     await services.syncStateRepo.setAuthToken(null);
     await services.syncStateRepo.setActiveUser(null);
     setUser(null);
@@ -1268,6 +1643,48 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setIsGuest(true);
     setSyncStatus('idle');
   }, [services, token]);
+
+  const setApiUrl = useCallback(
+    async (url: string) => {
+      if (!services) throw new Error('Database not ready');
+      const clean = url.trim().replace(/\/+$/, '');
+      if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
+        throw new Error('API URL must start with http:// or https://');
+      }
+      await services.driver.run(
+        'INSERT OR REPLACE INTO app_preferences (key, value) VALUES (?, ?)',
+        ['backend_api_url', clean]
+      );
+      setApiUrlState(clean);
+      apiUrlRef.current = clean;
+      updateHttpClients(clean);
+    },
+    [services]
+  );
+
+  const testApiConnection = useCallback(
+    async (url?: string): Promise<{ ok: boolean; message: string }> => {
+      const targetUrl = (url ?? apiUrlRef.current).trim().replace(/\/+$/, '');
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        const res = await fetch(`${targetUrl}/health`, {
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          return { ok: true, message: 'Connected successfully to Biyong API' };
+        }
+        return { ok: false, message: `Server responded with status ${res.status}` };
+      } catch (err: any) {
+        if (err?.name === 'AbortError') {
+          return { ok: false, message: 'Connection timed out (3s)' };
+        }
+        return { ok: false, message: 'Unable to reach server' };
+      }
+    },
+    []
+  );
 
   const value = useMemo(
     () => ({
@@ -1302,6 +1719,8 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       contributeToGoal,
       deleteGoal,
       createGroup,
+      joinGroup,
+      createGroupInvite,
       selectGroup,
       addGroupExpense,
       recordSettlement,
@@ -1334,6 +1753,9 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       register,
       logout,
       syncNow,
+      apiUrl,
+      setApiUrl,
+      testApiConnection,
     }),
     [
       isReady,
@@ -1367,6 +1789,8 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       contributeToGoal,
       deleteGoal,
       createGroup,
+      joinGroup,
+      createGroupInvite,
       selectGroup,
       addGroupExpense,
       recordSettlement,
@@ -1399,6 +1823,9 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       register,
       logout,
       syncNow,
+      apiUrl,
+      setApiUrl,
+      testApiConnection,
     ]
   );
 

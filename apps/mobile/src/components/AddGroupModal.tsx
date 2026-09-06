@@ -29,6 +29,7 @@ export const AddGroupModal: React.FC<AddGroupModalProps> = ({ visible, onClose, 
 
   const [name, setName] = useState('');
   const [currency, setCurrency] = useState('INR');
+  const [isPrivate, setIsPrivate] = useState(false);
   const [memberInput, setMemberInput] = useState('');
   const [members, setMembers] = useState<string[]>(['You']);
   const [error, setError] = useState<string | null>(null);
@@ -65,10 +66,11 @@ export const AddGroupModal: React.FC<AddGroupModalProps> = ({ visible, onClose, 
 
     setIsSubmitting(true);
     try {
-      const newGroup = await createGroup(name.trim(), currency, members);
+      const newGroup = await createGroup(name.trim(), currency, members, isPrivate);
       await selectGroup(newGroup.id);
       setName('');
       setCurrency('INR');
+      setIsPrivate(false);
       setMemberInput('');
       setMembers(['You']);
       if (onCreated) {
@@ -143,6 +145,125 @@ export const AddGroupModal: React.FC<AddGroupModalProps> = ({ visible, onClose, 
                 ]}
                 autoFocus
               />
+            </View>
+
+            {/* Group Type Pill Switch */}
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>GROUP TYPE</Text>
+              <View
+                style={[
+                  styles.typePillContainer,
+                  {
+                    backgroundColor: colors.surfaceSubtle,
+                    borderColor: colors.border,
+                    borderRadius: tokens.radius.md,
+                  },
+                ]}
+              >
+                <TouchableOpacity
+                  onPress={() => setIsPrivate(false)}
+                  activeOpacity={0.7}
+                  style={[
+                    styles.typePill,
+                    !isPrivate && {
+                      backgroundColor: colors.accentPrimary,
+                      borderRadius: tokens.radius.sm,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="people-outline"
+                    size={15}
+                    color={!isPrivate ? colors.accentForeground : colors.textSecondary}
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text
+                    style={[
+                      styles.typePillText,
+                      {
+                        color: !isPrivate ? colors.accentForeground : colors.textPrimary,
+                        fontWeight: !isPrivate ? '700' : '500',
+                      },
+                    ]}
+                  >
+                    Shared (Multi-User Sync)
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setIsPrivate(true)}
+                  activeOpacity={0.7}
+                  style={[
+                    styles.typePill,
+                    isPrivate && {
+                      backgroundColor: colors.accentPrimary,
+                      borderRadius: tokens.radius.sm,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="lock-closed-outline"
+                    size={14}
+                    color={isPrivate ? colors.accentForeground : colors.textSecondary}
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text
+                    style={[
+                      styles.typePillText,
+                      {
+                        color: isPrivate ? colors.accentForeground : colors.textPrimary,
+                        fontWeight: isPrivate ? '700' : '500',
+                      },
+                    ]}
+                  >
+                    Private (Offline Only)
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {!isPrivate ? (
+                <View
+                  style={[
+                    styles.typeNoteBox,
+                    {
+                      backgroundColor: colors.surfaceSubtle,
+                      borderColor: colors.border,
+                      borderRadius: tokens.radius.sm,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="information-circle-outline"
+                    size={16}
+                    color={colors.accentPrimary}
+                    style={{ marginRight: 6, marginTop: 1 }}
+                  />
+                  <Text style={[styles.typeNoteText, { color: colors.textSecondary }]}>
+                    You can invite friends with an invite code once created.
+                  </Text>
+                </View>
+              ) : (
+                <View
+                  style={[
+                    styles.typeNoteBox,
+                    {
+                      backgroundColor: colors.surfaceSubtle,
+                      borderColor: colors.border,
+                      borderRadius: tokens.radius.sm,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="shield-checkmark-outline"
+                    size={16}
+                    color={colors.accentPrimary}
+                    style={{ marginRight: 6, marginTop: 1 }}
+                  />
+                  <Text style={[styles.typeNoteText, { color: colors.textSecondary }]}>
+                    Only stored on this device with offline dummy member names.
+                  </Text>
+                </View>
+              )}
             </View>
 
             {/* Currency Selector */}
@@ -408,5 +529,34 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     letterSpacing: 0.5,
+  },
+  typePillContainer: {
+    flexDirection: 'row',
+    padding: 3,
+    borderWidth: 1,
+    gap: 4,
+  },
+  typePill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 9,
+    paddingHorizontal: 4,
+  },
+  typePillText: {
+    fontSize: 12,
+  },
+  typeNoteBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 10,
+    borderWidth: 1,
+    marginTop: 8,
+  },
+  typeNoteText: {
+    fontSize: 12,
+    lineHeight: 16,
+    flex: 1,
   },
 });
