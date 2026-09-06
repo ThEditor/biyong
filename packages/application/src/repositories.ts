@@ -50,6 +50,8 @@ export interface GroupRepository {
   getExpenses(groupId: string): Promise<GroupExpense[]>;
   addSettlement(settlement: Settlement): Promise<void>;
   getSettlements(groupId: string): Promise<Settlement[]>;
+  delete?(id: string): Promise<void>;
+  deleteExpense?(id: string): Promise<void>;
 }
 
 export interface BudgetRepository {

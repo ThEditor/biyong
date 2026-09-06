@@ -99,7 +99,7 @@ export class SqliteGroupRepository implements GroupRepository {
     await this.driver.run(
       `INSERT INTO group_members (id, group_id, name, user_id, is_dummy, role, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [m.id, m.groupId, m.name, m.userId, m.isDummy ? 1 : 0, m.role, m.createdAt]
+      [m.id, m.groupId, m.name, m.userId ?? null, m.isDummy ? 1 : 0, m.role, m.createdAt]
     );
   }
 
@@ -136,7 +136,7 @@ export class SqliteGroupRepository implements GroupRepository {
         JSON.stringify(exp.payers),
         exp.splitMethod,
         JSON.stringify(exp.allocations),
-        exp.notes,
+        exp.notes ?? null,
         exp.createdAt,
         exp.updatedAt,
       ]
@@ -170,7 +170,7 @@ export class SqliteGroupRepository implements GroupRepository {
       `INSERT INTO settlements (
         id, group_id, from_member_id, to_member_id, amount_minor, currency, settled_at, notes
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [s.id, s.groupId, s.fromMemberId, s.toMemberId, s.amountMinor, s.currency, s.settledAt, s.notes]
+      [s.id, s.groupId, s.fromMemberId, s.toMemberId, s.amountMinor, s.currency, s.settledAt, s.notes ?? null]
     );
   }
 
@@ -189,5 +189,16 @@ export class SqliteGroupRepository implements GroupRepository {
       settledAt: r.settled_at,
       notes: r.notes,
     }));
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.driver.run('DELETE FROM settlements WHERE group_id = ?', [id]);
+    await this.driver.run('DELETE FROM group_expenses WHERE group_id = ?', [id]);
+    await this.driver.run('DELETE FROM group_members WHERE group_id = ?', [id]);
+    await this.driver.run('DELETE FROM groups WHERE id = ?', [id]);
+  }
+
+  async deleteExpense(id: string): Promise<void> {
+    await this.driver.run('DELETE FROM group_expenses WHERE id = ?', [id]);
   }
 }
