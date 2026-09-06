@@ -30,6 +30,7 @@ interface ExpenseRow {
   currency: string;
   date: string;
   created_by_member_id: string;
+  created_by_user_id: string | null;
   payers_json: string;
   split_method: GroupExpense['splitMethod'];
   allocations_json: string;
@@ -122,9 +123,9 @@ export class SqliteGroupRepository implements GroupRepository {
   async addExpense(exp: GroupExpense): Promise<void> {
     await this.driver.run(
       `INSERT INTO group_expenses (
-        id, group_id, title, amount_minor, currency, date, created_by_member_id,
+        id, group_id, title, amount_minor, currency, date, created_by_member_id, created_by_user_id,
         payers_json, split_method, allocations_json, notes, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         exp.id,
         exp.groupId,
@@ -133,6 +134,7 @@ export class SqliteGroupRepository implements GroupRepository {
         exp.currency,
         exp.date,
         exp.createdByMemberId,
+        exp.createdByUserId ?? null,
         JSON.stringify(exp.payers),
         exp.splitMethod,
         JSON.stringify(exp.allocations),
@@ -156,6 +158,7 @@ export class SqliteGroupRepository implements GroupRepository {
       currency: r.currency,
       date: r.date,
       createdByMemberId: r.created_by_member_id,
+      createdByUserId: r.created_by_user_id ?? null,
       payers: JSON.parse(r.payers_json),
       splitMethod: r.split_method,
       allocations: JSON.parse(r.allocations_json),

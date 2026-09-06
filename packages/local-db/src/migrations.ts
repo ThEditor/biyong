@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS group_expenses (
   currency TEXT NOT NULL DEFAULT 'INR',
   date TEXT NOT NULL,
   created_by_member_id TEXT NOT NULL,
+  created_by_user_id TEXT,
   payers_json TEXT NOT NULL,
   split_method TEXT NOT NULL,
   allocations_json TEXT NOT NULL,
@@ -180,6 +181,13 @@ export const BUILTIN_CATEGORIES = [
 
 export async function runMigrations(driver: SqliteDriver): Promise<void> {
   await driver.exec(INITIAL_MIGRATION_V1);
+
+  // Migration: Add created_by_user_id to group_expenses if missing
+  try {
+    await driver.run('ALTER TABLE group_expenses ADD COLUMN created_by_user_id TEXT');
+  } catch {
+    // Column already exists, ignore
+  }
 
   // Seed default categories if not already present
   for (const cat of BUILTIN_CATEGORIES) {

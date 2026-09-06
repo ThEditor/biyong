@@ -7,3 +7,4 @@ export * from './wealth.js';
 export * from './reports.js';
 export * from './filters.js';
 export * from './trends.js';
+export * from './permissions.js';
