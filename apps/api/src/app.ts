@@ -393,6 +393,20 @@ export function createApp() {
       // Body is optional
     }
 
+    const now = new Date();
+
+    // Reuse existing active invite code if available for this group
+    const existingInvite = Array.from(invitesMap.values()).find(
+      (inv) =>
+        inv.groupId === groupId &&
+        inv.status === 'pending' &&
+        new Date(inv.expiresAt).getTime() > now.getTime() &&
+        (!email || inv.email === email)
+    );
+    if (existingInvite) {
+      return c.json({ invitation: existingInvite }, 200);
+    }
+
     // Generate 6-char random invite code (e.g. INV-XXXXXX)
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let codePart = '';
@@ -401,7 +415,6 @@ export function createApp() {
     }
     const inviteCode = `INV-${codePart}`;
 
-    const now = new Date();
     const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
     const invitation: GroupInvitation = {

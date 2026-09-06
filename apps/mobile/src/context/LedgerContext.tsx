@@ -179,6 +179,11 @@ export interface LedgerContextValue {
   ) => Promise<Group>;
   joinGroup: (inviteCode: string) => Promise<Group>;
   createGroupInvite: (groupId: string) => Promise<string>;
+  splitTransactionIntoGroup: (
+    transactionId: string,
+    groupId: string,
+    splitMethod?: 'equal' | 'exact' | 'percentage' | 'shares'
+  ) => Promise<GroupExpense>;
   selectGroup: (id: string | null) => Promise<void>;
   addGroupExpense: (
     expenseData: Omit<GroupExpense, 'id' | 'createdAt' | 'updatedAt' | 'createdByUserId'> & {
@@ -1136,7 +1141,9 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         },
       ];
 
-      if (memberNames && memberNames.length > 0) {
+      // Only add dummy initial members for private offline groups.
+      // Shared groups start with owner only; real members join via invite code!
+      if (groupIsPrivate && memberNames && memberNames.length > 0) {
         for (const mName of memberNames) {
           const trimmed = mName.trim();
           if (
@@ -1279,6 +1286,22 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     async (groupId: string): Promise<string> => {
       if (!services) throw new Error('Database not ready');
 
+      // Check local cache in app_preferences first so the same code is consistently returned
+      const prefKey = `invite_code_${groupId}`;
+      try {
+        const cached = await services.driver.queryOne<{ value: string }>(
+          'SELECT value FROM app_preferences WHERE key = ?',
+          [prefKey]
+        );
+        if (cached?.value) {
+          return cached.value;
+        }
+      } catch {
+        // ignore
+      }
+
+      let inviteCode: string | null = null;
+
       // If user is logged in, try API invite endpoint
       if (token) {
         try {
@@ -1293,7 +1316,7 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           if (res.ok) {
             const data = await res.json();
             if (data.invitation?.inviteCode) {
-              return data.invitation.inviteCode;
+              inviteCode = data.invitation.inviteCode;
             }
           }
         } catch {
@@ -1301,35 +1324,113 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
       }
 
-      // Offline fallback: generate random INV-XXXXXX
-      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-      let codePart = '';
-      for (let i = 0; i < 6; i++) {
-        codePart += chars.charAt(Math.floor(Math.random() * chars.length));
-      }
-      const fallbackCode = `INV-${codePart}`;
+      if (!inviteCode) {
+        // Offline fallback: generate random INV-XXXXXX
+        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        let codePart = '';
+        for (let i = 0; i < 6; i++) {
+          codePart += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        inviteCode = `INV-${codePart}`;
 
-      // Enqueue sync operation for invite creation
+        // Enqueue sync operation for invite creation
+        const op = createSyncOperation({
+          entityType: 'group_invitation',
+          entityId: generateId('inv'),
+          operationType: 'create',
+          payload: {
+            groupId,
+            inviteCode,
+            inviterUserId: user?.id ?? null,
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+          },
+          deviceId: deviceIdRef.current || 'device_default',
+        });
+        await services.outboxRepo.enqueue(op);
+        const pCount = await services.outboxRepo.getPendingCount();
+        setPendingSyncCount(pCount);
+      }
+
+      // Persist in local app_preferences so subsequent taps on the same group return identical code
+      try {
+        await services.driver.run(
+          'INSERT OR REPLACE INTO app_preferences (key, value) VALUES (?, ?)',
+          [prefKey, inviteCode]
+        );
+      } catch {
+        // ignore
+      }
+
+      return inviteCode;
+    },
+    [services, token, user]
+  );
+
+  const splitTransactionIntoGroup = useCallback(
+    async (
+      transactionId: string,
+      groupId: string,
+      splitMethod: 'equal' | 'exact' | 'percentage' | 'shares' = 'equal'
+    ): Promise<GroupExpense> => {
+      if (!services) throw new Error('Database not ready');
+      const tx = await services.txRepo.findById(transactionId);
+      if (!tx) throw new Error('Transaction not found');
+
+      const members = await services.groupRepo.getMembers(groupId);
+      if (members.length === 0) throw new Error('Selected group has no members');
+
+      // Auto-select payer as current user / "You" / owner
+      const myMember =
+        members.find(
+          (m) =>
+            (user && m.userId === user.id) ||
+            m.name.toLowerCase() === 'you' ||
+            m.role === 'owner'
+        ) || members[0];
+
+      const allocations = members.map((m) => ({ memberId: m.id }));
+      const now = new Date().toISOString();
+      const expenseTitle = tx.merchant || tx.notes || `Split: ${tx.date}`;
+
+      const newExpense: GroupExpense = {
+        id: generateId('gexp'),
+        groupId,
+        title: expenseTitle,
+        amountMinor: tx.amountMinor,
+        currency: tx.currency as any,
+        date: tx.date,
+        createdByMemberId: myMember.id,
+        createdByUserId: user?.id ?? null,
+        payers: [{ memberId: myMember.id, amountMinor: tx.amountMinor }],
+        splitMethod,
+        allocations,
+        notes: `Linked from transaction ${tx.id}${tx.merchant ? ` (${tx.merchant})` : ''}`,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      await services.groupUseCases.addExpense(newExpense);
+
+      // Enqueue sync operation
       const op = createSyncOperation({
-        entityType: 'group_invitation',
-        entityId: generateId('inv'),
+        entityType: 'group_expense',
+        entityId: newExpense.id,
         operationType: 'create',
-        payload: {
-          groupId,
-          inviteCode: fallbackCode,
-          inviterUserId: user?.id ?? null,
-          status: 'pending',
-          createdAt: new Date().toISOString(),
-        },
+        payload: newExpense as unknown as Record<string, unknown>,
         deviceId: deviceIdRef.current || 'device_default',
       });
       await services.outboxRepo.enqueue(op);
       const pCount = await services.outboxRepo.getPendingCount();
       setPendingSyncCount(pCount);
 
-      return fallbackCode;
+      await refreshLedger();
+      if (activeGroupIdRef.current === groupId) {
+        await refreshActiveGroup(groupId);
+      }
+      return newExpense;
     },
-    [services, token, user]
+    [services, user, refreshLedger, refreshActiveGroup]
   );
 
   const addGroupExpense = useCallback(
@@ -1756,6 +1857,7 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       apiUrl,
       setApiUrl,
       testApiConnection,
+      splitTransactionIntoGroup,
     }),
     [
       isReady,
@@ -1826,6 +1928,7 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       apiUrl,
       setApiUrl,
       testApiConnection,
+      splitTransactionIntoGroup,
     ]
   );
 

@@ -13,9 +13,11 @@ import {
   Button,
   ButtonText,
 } from '@gluestack-ui/themed';
+import type { Transaction } from '@biyong/schemas';
 import { useAppTheme } from '../theme/ThemeContext';
 import { useLedger } from '../context/LedgerContext';
 import { TransactionItem } from '../components/TransactionItem';
+import { SplitTransactionModal } from '../components/SplitTransactionModal';
 
 export interface TransactionsScreenProps {
   onBack?: () => void;
@@ -25,6 +27,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({ onBack }
   const { colors, tokens } = useAppTheme();
   const { transactions, accounts, categories, openEditModal, openAddModal } = useLedger();
 
+  const [splittingTransaction, setSplittingTransaction] = useState<Transaction | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState<'all' | 'expense' | 'income' | 'transfer'>('all');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | 'all'>('all');
@@ -318,10 +321,17 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({ onBack }
               toAccountName={tx.toAccountId ? getAccountName(tx.toAccountId) : undefined}
               categoryName={getCategoryName(tx.categoryId)}
               onPress={openEditModal}
+              onSplit={(txToSplit) => setSplittingTransaction(txToSplit)}
             />
           ))
         )}
       </ScrollView>
+
+      <SplitTransactionModal
+        visible={!!splittingTransaction}
+        transaction={splittingTransaction}
+        onClose={() => setSplittingTransaction(null)}
+      />
     </Box>
   );
 };

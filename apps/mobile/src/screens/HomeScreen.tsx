@@ -13,9 +13,11 @@ import {
   Button,
   ButtonText,
 } from '@gluestack-ui/themed';
+import type { Transaction } from '@biyong/schemas';
 import { useAppTheme } from '../theme/ThemeContext';
 import { useLedger } from '../context/LedgerContext';
 import { TransactionItem } from '../components/TransactionItem';
+import { SplitTransactionModal } from '../components/SplitTransactionModal';
 
 export interface HomeScreenProps {
   onNavigateToAccounts: () => void;
@@ -64,6 +66,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   } = useLedger();
 
   const [isBalanceHidden, setIsBalanceHidden] = useState(false);
+  const [splittingTransaction, setSplittingTransaction] = useState<Transaction | null>(null);
 
   const now = new Date();
   const currentMonthLabel = `${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}`;
@@ -658,11 +661,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 toAccountName={tx.toAccountId ? getAccountName(tx.toAccountId) : undefined}
                 categoryName={getCategoryName(tx.categoryId)}
                 onPress={openEditModal}
+                onSplit={(txToSplit) => setSplittingTransaction(txToSplit)}
               />
             ))
           )}
         </VStack>
       </ScrollView>
+
+      <SplitTransactionModal
+        visible={!!splittingTransaction}
+        transaction={splittingTransaction}
+        onClose={() => setSplittingTransaction(null)}
+      />
     </Box>
   );
 };

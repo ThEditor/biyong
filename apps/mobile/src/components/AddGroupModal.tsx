@@ -59,14 +59,14 @@ export const AddGroupModal: React.FC<AddGroupModalProps> = ({ visible, onClose, 
       return;
     }
 
-    if (members.length < 2) {
+    if (isPrivate && members.length < 2) {
       setError('Please add at least one other member to split expenses with.');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const newGroup = await createGroup(name.trim(), currency, members, isPrivate);
+      const newGroup = await createGroup(name.trim(), currency, isPrivate ? members : [], isPrivate);
       await selectGroup(newGroup.id);
       setName('');
       setCurrency('INR');
@@ -299,93 +299,123 @@ export const AddGroupModal: React.FC<AddGroupModalProps> = ({ visible, onClose, 
               </View>
             </View>
 
-            {/* Members Section */}
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>MEMBERS</Text>
-              <View style={styles.memberInputRow}>
-                <TextInput
-                  value={memberInput}
-                  onChangeText={setMemberInput}
-                  placeholder="Friend name (e.g. Alice, Bob)"
-                  placeholderTextColor={colors.textMuted}
-                  onSubmitEditing={handleAddMember}
-                  returnKeyType="done"
-                  style={[
-                    styles.textInput,
-                    styles.memberTextInput,
-                    {
-                      backgroundColor: colors.surfaceSubtle,
-                      borderColor: colors.border,
-                      color: colors.textPrimary,
-                      borderRadius: tokens.radius.md,
-                    },
-                  ]}
-                />
-                <TouchableOpacity
-                  onPress={handleAddMember}
-                  activeOpacity={0.7}
-                  style={[
-                    styles.addMemberBtn,
-                    {
-                      backgroundColor: colors.accentPrimary,
-                      borderRadius: tokens.radius.md,
-                    },
-                  ]}
-                >
-                  <Feather name="plus" size={18} color={colors.accentForeground} />
-                  <Text style={[styles.addMemberBtnText, { color: colors.accentForeground }]}>
-                    Add
-                  </Text>
-                </TouchableOpacity>
-              </View>
+            {/* Members Section - Private groups only */}
+            {isPrivate ? (
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>OFFLINE MEMBERS</Text>
+                <View style={styles.memberInputRow}>
+                  <TextInput
+                    value={memberInput}
+                    onChangeText={setMemberInput}
+                    placeholder="Friend name (e.g. Alice, Bob)"
+                    placeholderTextColor={colors.textMuted}
+                    onSubmitEditing={handleAddMember}
+                    returnKeyType="done"
+                    style={[
+                      styles.textInput,
+                      styles.memberTextInput,
+                      {
+                        backgroundColor: colors.surfaceSubtle,
+                        borderColor: colors.border,
+                        color: colors.textPrimary,
+                        borderRadius: tokens.radius.md,
+                      },
+                    ]}
+                  />
+                  <TouchableOpacity
+                    onPress={handleAddMember}
+                    activeOpacity={0.7}
+                    style={[
+                      styles.addMemberBtn,
+                      {
+                        backgroundColor: colors.accentPrimary,
+                        borderRadius: tokens.radius.md,
+                      },
+                    ]}
+                  >
+                    <Feather name="plus" size={18} color={colors.accentForeground} />
+                    <Text style={[styles.addMemberBtnText, { color: colors.accentForeground }]}>
+                      Add
+                    </Text>
+                  </TouchableOpacity>
+                </View>
 
-              {/* Members Chip List */}
-              <View style={styles.memberChipsWrap}>
-                {members.map((member, index) => {
-                  const isOwner = index === 0;
-                  return (
-                    <View
-                      key={`${member}-${index}`}
-                      style={[
-                        styles.memberChip,
-                        {
-                          backgroundColor: isOwner ? colors.accentSubtle : colors.surfaceSubtle,
-                          borderColor: isOwner ? colors.accentPrimary : colors.border,
-                          borderRadius: tokens.radius.full,
-                        },
-                      ]}
-                    >
-                      <Ionicons
-                        name={isOwner ? 'person' : 'person-outline'}
-                        size={14}
-                        color={isOwner ? colors.accentPrimary : colors.textSecondary}
-                        style={{ marginRight: 6 }}
-                      />
-                      <Text
+                {/* Members Chip List */}
+                <View style={styles.memberChipsWrap}>
+                  {members.map((member, index) => {
+                    const isOwner = index === 0;
+                    return (
+                      <View
+                        key={`${member}-${index}`}
                         style={[
-                          styles.memberNameText,
-                          { color: isOwner ? colors.accentPrimary : colors.textPrimary },
+                          styles.memberChip,
+                          {
+                            backgroundColor: isOwner ? colors.accentSubtle : colors.surfaceSubtle,
+                            borderColor: isOwner ? colors.accentPrimary : colors.border,
+                            borderRadius: tokens.radius.full,
+                          },
                         ]}
                       >
-                        {member} {isOwner ? '(Owner)' : ''}
-                      </Text>
-                      {!isOwner && (
-                        <TouchableOpacity
-                          onPress={() => handleRemoveMember(index)}
-                          style={styles.chipRemoveBtn}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        <Ionicons
+                          name={isOwner ? 'person' : 'person-outline'}
+                          size={14}
+                          color={isOwner ? colors.accentPrimary : colors.textSecondary}
+                          style={{ marginRight: 6 }}
+                        />
+                        <Text
+                          style={[
+                            styles.memberNameText,
+                            { color: isOwner ? colors.accentPrimary : colors.textPrimary },
+                          ]}
                         >
-                          <Feather name="x" size={14} color={colors.textSecondary} />
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  );
-                })}
+                          {member} {isOwner ? '(Owner)' : ''}
+                        </Text>
+                        {!isOwner && (
+                          <TouchableOpacity
+                            onPress={() => handleRemoveMember(index)}
+                            style={styles.chipRemoveBtn}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            <Feather name="x" size={14} color={colors.textSecondary} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
+                <Text style={[styles.helperText, { color: colors.textMuted }]}>
+                  Private group members are 100% offline local dummy profiles.
+                </Text>
               </View>
-              <Text style={[styles.helperText, { color: colors.textMuted }]}>
-                Private group members are 100% offline local profiles.
-              </Text>
-            </View>
+            ) : (
+              <View
+                style={[
+                  styles.typeNoteBox,
+                  {
+                    backgroundColor: colors.surfaceSubtle,
+                    borderColor: colors.border,
+                    borderRadius: tokens.radius.md,
+                    padding: 14,
+                    marginBottom: 16,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="shield-checkmark-outline"
+                  size={18}
+                  color={colors.accentPrimary}
+                  style={{ marginRight: 8, marginTop: 1 }}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.inputLabel, { color: colors.accentPrimary, marginBottom: 4 }]}>
+                    MULTI-USER REAL SYNC
+                  </Text>
+                  <Text style={{ color: colors.textSecondary, fontSize: 13, lineHeight: 18 }}>
+                    Dummy member entries are disabled for shared groups. You will start as the group owner, and other members join directly using your 6-character group invite code.
+                  </Text>
+                </View>
+              </View>
+            )}
 
             {/* Submit Button */}
             <TouchableOpacity

@@ -16,6 +16,7 @@ import {
   canDeleteExpense,
   type DependencyGraph,
 } from '@biyong/domain';
+import * as Clipboard from 'expo-clipboard';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../theme/ThemeContext';
 import { useLedger } from '../context/LedgerContext';
@@ -24,6 +25,7 @@ import { JoinGroupModal } from '../components/JoinGroupModal';
 import { AddGroupExpenseModal } from '../components/AddGroupExpenseModal';
 import { SettleModal } from '../components/SettleModal';
 import { ExplanationModal } from '../components/ExplanationModal';
+import { InteractiveGraphView } from '../components/InteractiveGraphView';
 
 type GroupDetailTab = 'expenses' | 'balances' | 'graph';
 
@@ -144,20 +146,22 @@ export const GroupsScreen: React.FC<GroupsScreenProps> = ({ onBack }) => {
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         {/* Top Header */}
         <View style={[styles.screenHeader, { borderBottomColor: colors.border }]}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            {onBack && (
-              <TouchableOpacity onPress={onBack} style={{ marginRight: 8 }}>
-                <Feather name="chevron-left" size={24} color={colors.accentPrimary} />
-              </TouchableOpacity>
-            )}
-            <View>
-              <Text style={[styles.screenTitle, { color: colors.textPrimary }]}>Groups & Splits</Text>
-              <Text style={[styles.screenSubtitle, { color: colors.textSecondary }]}>
-                Offline multi-payer expenses & settlements
+          <View style={{ flex: 1, marginRight: 10 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              {onBack && (
+                <TouchableOpacity onPress={onBack} style={{ marginRight: 6 }}>
+                  <Feather name="chevron-left" size={22} color={colors.accentPrimary} />
+                </TouchableOpacity>
+              )}
+              <Text style={[styles.screenTitle, { color: colors.textPrimary }]} numberOfLines={1}>
+                Groups & Splits
               </Text>
             </View>
+            <Text style={[styles.screenSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
+              Multi-payer expenses & debt simplification
+            </Text>
           </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <TouchableOpacity
               onPress={() => setIsJoinGroupOpen(true)}
               style={[
@@ -168,15 +172,16 @@ export const GroupsScreen: React.FC<GroupsScreenProps> = ({ onBack }) => {
                   borderRadius: tokens.radius.md,
                 },
               ]}
+              hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
             >
               <Ionicons
                 name="enter-outline"
-                size={16}
+                size={15}
                 color={colors.textPrimary}
-                style={{ marginRight: 4 }}
+                style={{ marginRight: 3 }}
               />
               <Text style={[styles.headerSecondaryBtnText, { color: colors.textPrimary }]}>
-                Join Group
+                Join
               </Text>
             </TouchableOpacity>
 
@@ -186,10 +191,11 @@ export const GroupsScreen: React.FC<GroupsScreenProps> = ({ onBack }) => {
                 styles.headerAddBtn,
                 { backgroundColor: colors.accentPrimary, borderRadius: tokens.radius.md },
               ]}
+              hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
             >
-              <Feather name="plus" size={16} color={colors.accentForeground} />
+              <Feather name="plus" size={15} color={colors.accentForeground} style={{ marginRight: 2 }} />
               <Text style={[styles.headerAddBtnText, { color: colors.accentForeground }]}>
-                New Group
+                New
               </Text>
             </TouchableOpacity>
           </View>
@@ -1027,8 +1033,19 @@ export const GroupsScreen: React.FC<GroupsScreenProps> = ({ onBack }) => {
                 })}
               </View>
 
-              {/* Flow Edges List */}
+              {/* Interactive Draggable Visual Graph */}
+              <InteractiveGraphView
+                nodes={graphData.nodes}
+                edges={graphData.edges}
+                currency={currency}
+                activeFilter={graphFilter}
+              />
+
+              {/* Flow Edges Detailed Audit */}
               <View style={styles.edgesList}>
+                <Text style={[styles.sectionHeading, { color: colors.textSecondary, marginBottom: 8 }]}>
+                  TRANSACTION DEPENDENCY AUDIT
+                </Text>
                 {graphData.edges
                   .filter((e) => {
                     if (graphFilter === 'pay') return e.label.toLowerCase().includes('paid');
@@ -1190,14 +1207,18 @@ export const GroupsScreen: React.FC<GroupsScreenProps> = ({ onBack }) => {
 
             <View style={styles.inviteActionsRow}>
               <TouchableOpacity
-                onPress={() => {
-                  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText && inviteModalCode) {
-                    navigator.clipboard.writeText(inviteModalCode).catch(() => {});
+                onPress={async () => {
+                  if (inviteModalCode) {
+                    try {
+                      await Clipboard.setStringAsync(inviteModalCode);
+                    } catch (e) {
+                      console.warn('Clipboard.setStringAsync error:', e);
+                    }
                   }
                   setInviteCopied(true);
                   Alert.alert(
-                    'Code Ready to Share',
-                    `Invite code "${inviteModalCode}" copied. Give this code to your friends to enter on the "Join Group" screen.`
+                    'Code Copied to Clipboard',
+                    `Invite code "${inviteModalCode}" has been copied to your clipboard. Give this code to your friends to enter on the "Join Group" screen.`
                   );
                 }}
                 style={[

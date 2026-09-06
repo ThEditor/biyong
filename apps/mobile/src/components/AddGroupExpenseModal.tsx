@@ -25,7 +25,7 @@ type SplitMethod = 'equal' | 'exact' | 'percentage' | 'shares';
 
 export const AddGroupExpenseModal: React.FC<AddGroupExpenseModalProps> = ({ visible, onClose }) => {
   const { colors, tokens } = useAppTheme();
-  const { activeGroup, activeGroupMembers, addGroupExpense } = useLedger();
+  const { activeGroup, activeGroupMembers, addGroupExpense, user } = useLedger();
 
   const [title, setTitle] = useState('');
   const [amountStr, setAmountStr] = useState('');
@@ -50,9 +50,12 @@ export const AddGroupExpenseModal: React.FC<AddGroupExpenseModalProps> = ({ visi
   // Initialize defaults when modal becomes visible or members change
   useEffect(() => {
     if (visible && activeGroupMembers.length > 0) {
-      if (!singlePayerId || !activeGroupMembers.some((m) => m.id === singlePayerId)) {
-        setSinglePayerId(activeGroupMembers[0].id);
-      }
+      const myMember = activeGroupMembers.find(
+        (m) => (user && m.userId === user.id) || m.name.toLowerCase() === 'you' || m.role === 'owner'
+      );
+      const defaultPayerId = myMember ? myMember.id : activeGroupMembers[0].id;
+      setSinglePayerId(defaultPayerId);
+
       const initialEqual: Record<string, boolean> = {};
       const initialShares: Record<string, string> = {};
       activeGroupMembers.forEach((m) => {
@@ -62,7 +65,7 @@ export const AddGroupExpenseModal: React.FC<AddGroupExpenseModalProps> = ({ visi
       setEqualInvolved(initialEqual);
       setShares(initialShares);
     }
-  }, [visible, activeGroupMembers]);
+  }, [visible, activeGroupMembers, user]);
 
   const currency = activeGroup?.currency ?? 'INR';
   const totalVal = parseFloat(amountStr);
