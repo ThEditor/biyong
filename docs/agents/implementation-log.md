@@ -2,69 +2,62 @@
 
 # AI Agent Implementation Log
 
-## Current Phase: PHASE 2 — Budgets & Goals
+## Current Phase: PHASE 3 — Private Groups & Transparent Splitting
 
 ### Status: COMPLETED & VERIFIED (Stop Gate Passed)
 
 ---
 
-### What Is Implemented & Verified in Phase 2
+### What Is Implemented & Verified in Phase 3
 1. **Domain Engine (`packages/domain`):**
-   - **Budgets (`budgets.ts`):** Weekly and monthly period calculations with ISO date bounds (`calculateBudgetPeriod`), rollover calculations carrying positive surpluses or negative deficits (`calculateRollover`), adherence status with health states: `healthy` (<80%), `warning` (80-99%), `exceeded` (>=100%), and daily spending allowances remaining (`calculateBudgetStatus`).
-   - **Goals (`goals.ts`):** Savings goals with target dates, required monthly savings rate needed to meet target deadlines (`calculateRequiredMonthlySavings`), and deterministic projected completion dates (`projectCompletionDate`, `calculateGoalProgress`).
-   - **Spending Trends (`trends.ts`):** Fixed vs variable spending classification (`classifySpending`) based on recurring flag or fixed category IDs; multi-month cash flow trends with period-by-period income, expenses, net savings, and savings rate (`calculateSpendingTrends`).
-   - All tests passing (31/31 unit tests).
+   - **Split Calculations (`splits.ts`):** Deterministic calculations for `equal`, `exact`, `percentage`, `shares`, and `itemized` splits guaranteeing `sum(owedMinor) === totalAmountMinor` with penny-rounding absorption on the final participant. Payers sum validation (`validatePayers`).
+   - **Net Balances & Debt Simplification (`settlements.ts`):** `calculateNetBalances` calculating exact member net balances across all group expenses and settlements. `simplifyDebts` executing deterministic greedy min-cash-flow reduction to settle debts with the absolute minimum number of transactions.
+   - **Transparent Explanation & Dependency Graph (`settlements.ts`):** `explainMemberSettlement` generating per-member audit trails with granular expense origin net contributions (+/-). `buildDependencyGraph` generating complete directed graph nodes (members, expenses) and edges (payer allocations, split shares, settlements).
 
 2. **Application Layer (`packages/application`):**
-   - `BudgetUseCases`: `createBudget`, `getBudget`, `getBudgetByCategory`, `listBudgets`, `updateBudget`, `deleteBudget`, `getBudgetStatus`, `listBudgetsWithStatus`.
-   - `GoalUseCases`: `createGoal`, `getGoal`, `listGoals`, `updateGoal`, `deleteGoal`, `contributeToGoal`, `getGoalProgress`, `listGoalsWithProgress`.
-   - `AnalyticsUseCases`: `getFixedVsVariable`, `getSpendingTrends`.
-   - All tests passing (20/20 unit tests).
+   - [`GroupUseCases`](file:///home/theditor/workspace/me/biyong/packages/application/src/use-cases/groups.ts): `createGroup`, `getGroup`, `listGroups`, `addMember`, `getMembers`, `addExpense`, `getExpenses`, `deleteExpense`, `addSettlement`, `getSettlements`, `getGroupSettlementPlan`, `explainSettlement`, `getDependencyGraph`, `getGroupSummary`, `deleteGroup`.
 
 3. **Local SQLite Persistence (`packages/local-db`):**
-   - `SqliteBudgetRepository`: CRUD operations for category budgets with period and rollover tracking.
-   - `SqliteGoalRepository`: CRUD operations for savings goals sorted chronologically by target date.
-   - Parameter null-coalescing on optional fields for clean `node:sqlite` execution.
-   - All tests passing (18/18 integration tests).
+   - [`SqliteGroupRepository`](file:///home/theditor/workspace/me/biyong/packages/local-db/src/repositories/group-repository.ts): Tables `groups`, `group_members`, `group_expenses`, `settlements`. Parameter null-coalescing on all optional fields for clean Node 22 `node:sqlite` execution. Deletion cascades for groups and expenses.
 
 4. **Mobile UI (`apps/mobile`):**
-   - **Budgets & Goals Hub (`BudgetsGoalsScreen`):**
-     - Pill tab switch between Budgets and Goals.
-     - Overall budget adherence, category progress bars, health badges (Emerald `healthy`, Amber `warning`, Red `exceeded`), daily allowances ("₹X / day remaining"), rollover indicators, and deletion confirmation.
-     - Goals overview card, target date badges, progress bars, required monthly savings, and projected completion status.
+   - **Groups Hub (`GroupsScreen.tsx`):**
+     - **Overview Mode:** Cards for all offline private groups with member count, total expenditure, and delete confirmation.
+     - **Detail Mode:** Header with group currency badge, total spend summary, and 3 sub-tabs:
+       - **Expenses Tab:** List of group expenses with split method badges, payer tags, formatted amounts via `formatMoney`, and delete button.
+       - **Balances & Settle Tab:** Member net balance cards (Green "Gets Back", Red "Owes", Gray "Settled"). Tapping any member opens `ExplanationModal`. Simplified Debt Settlements section with 1-tap "Settle Up" action.
+       - **Graph Tab:** Visual node-link overview of member funding and share liabilities.
    - **Modals:**
-     - `AddBudgetModal`: Category selection, amount in currency with minor units preview, Weekly/Monthly period selector, and Rollover toggle.
-     - `AddGoalModal`: Title, target amount, initial amount, and target date with quick preset chips (3m, 6m, 1y, 2y).
-     - `ContributeGoalModal`: Quick modal to allocate funds to an active savings goal.
-   - **Advanced Analytics in Reports (`ReportsScreen`):**
-     - Fixed vs Variable spending card with two-color split bar and user-friendly explanation.
-     - Multi-month spending & savings trends breakdown with dynamic savings rate badges.
-   - **Strict Design Adherence:**
-     - 100% `@expo/vector-icons` (`Ionicons` / `Feather`), zero emojis.
-     - No developer jargon in consumer views.
-     - Safe Area insets respected across status bar and navigation bar.
-     - Full theme token styling across all light/dark and accent color combinations.
+     - [`AddGroupModal.tsx`](file:///home/theditor/workspace/me/biyong/apps/mobile/src/components/AddGroupModal.tsx): Name, currency selector, and member chip manager.
+     - [`AddGroupExpenseModal.tsx`](file:///home/theditor/workspace/me/biyong/apps/mobile/src/components/AddGroupExpenseModal.tsx): Title, amount, date, multi-payer support, and split allocation selectors (Equal, Exact, Percentage, Shares).
+     - [`SettleModal.tsx`](file:///home/theditor/workspace/me/biyong/apps/mobile/src/components/SettleModal.tsx): Payer, receiver, prefilled transfer amount, and notes.
+     - [`ExplanationModal.tsx`](file:///home/theditor/workspace/me/biyong/apps/mobile/src/components/ExplanationModal.tsx): Full mathematical derivation of a member's net position.
+   - **Navigation:** Persistent `groups` tab in bottom navigation bar.
 
-5. **Stop Gate Verification (`pnpm verify:phase2`):**
-   - 100% offline verification across 6 sections:
-     1. Database & repository initialization.
-     2. Account setup and transactions.
-     3. Category budgets, period calculations, daily allowances, and surplus rollover.
-     4. Savings goals, required monthly savings, contributions, and completion projections.
-     5. Fixed vs variable spending classification (Rent/Utilities vs Groceries/Dining).
-     6. Multi-month spending trends and savings rate calculation.
+5. **Stop Gate Verification (`pnpm verify:phase3`):**
+   - 100% offline verification matching `biyong.md` section 56:
+     - Group: "Goa Trip"
+     - 4 participants: Alice (Owner), Bob, Charlie, Diana
+     - 22 expenses across mixed split types (equal, exact, percentage, shares, itemized, multiple co-payers). Total trip spend: ₹2,17,300.00.
+     - Financial invariant verified: Net balance sum = ₹0.00.
+     - Transparent explanations verified for all members.
+     - Dependency graph verified (26 nodes, 112 edges).
+     - Simplified debt transfers computed (3 transactions).
+     - Executed all settlements and verified that all member balances reach EXACTLY ₹0.00.
 
 ---
 
 ### Previous Completed Phases
 - **PHASE 0 — Engineering Foundation:** Completed & Verified (`2153df3`).
 - **PHASE 1 — Local Money Ledger:** Completed & Verified (`6ec920e`, `9e876f3`, `7738abb`, `27501aa`).
+- **PHASE 2 — Budgets & Goals:** Completed & Verified (`b22543c`, `80aa9cb`, `a482963`, `d1f936f`).
 
 ---
 
-### Next Recommended Tasks: PHASE 3 — Private Groups, Splits & Settlements
-1. Offline-first group ledger management (`groups`, `group_members`, `group_expenses`, `group_splits`).
-2. Split methods: Equal, Exact minor units, Percentages, and Shares.
-3. Debt simplification algorithm (min-cash-flow graph reduction) to settle debts with minimum transactions.
-4. Mobile UI for Groups, Expense Splits, and Debt Settlement.
+### Next Recommended Tasks: PHASE 4 — Authentication & Synchronization Foundation
+1. Email / password authentication and secure session management.
+2. Device identity and guest-to-authenticated account upgrade/merge.
+3. Local outbox, server inbox, pull/push synchronization engine with monotonic cursors and idempotency.
+4. Offline conflict resolution and convergence testing across two simulated devices.
+
 
