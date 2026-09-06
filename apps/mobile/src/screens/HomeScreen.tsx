@@ -177,7 +177,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               style={[
                 styles.profileAvatar,
                 {
-                  backgroundColor: isGuest ? colors.surfaceSubtle : '#7C3AED',
+                  backgroundColor: isGuest ? colors.surfaceSubtle : colors.accentPrimary,
                   borderColor: colors.border,
                 },
               ]}
@@ -185,7 +185,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               <Ionicons
                 name={isGuest ? 'person-outline' : 'person'}
                 size={18}
-                color={isGuest ? colors.textSecondary : '#FFFFFF'}
+                color={isGuest ? colors.textSecondary : colors.accentForeground}
               />
             </View>
             <VStack>
@@ -220,16 +220,25 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           </HStack>
         </HStack>
 
-        {/* Hero Current Balance Card (Signature Purple Fintech Banner) */}
+        {/* Hero Current Balance Card (Theme-Adaptive Accent Banner) */}
         <TouchableOpacity
           activeOpacity={0.9}
           onPress={onNavigateToAccounts}
-          style={[styles.heroCardContainer, { borderRadius: tokens.radius.lg }]}
+          style={[
+            styles.heroCardContainer,
+            {
+              backgroundColor: colors.accentPrimary,
+              shadowColor: colors.accentPrimary,
+              borderRadius: tokens.radius.lg,
+            },
+          ]}
         >
           <View style={styles.heroCardContent}>
             <HStack justifyContent="space-between" alignItems="center">
               <HStack alignItems="center" space="xs">
-                <Text style={styles.heroLabel}>CURRENT BALANCE</Text>
+                <Text style={[styles.heroLabel, { color: colors.accentForeground }]}>
+                  CURRENT BALANCE
+                </Text>
                 <TouchableOpacity
                   onPress={() => setIsBalanceHidden(!isBalanceHidden)}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -237,29 +246,31 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   <Ionicons
                     name={isBalanceHidden ? 'eye-off-outline' : 'eye-outline'}
                     size={16}
-                    color="rgba(255, 255, 255, 0.8)"
+                    color={colors.accentForeground}
                   />
                 </TouchableOpacity>
               </HStack>
               <HStack alignItems="center" space="xs">
-                <Text style={styles.heroCurrency}>INR</Text>
-                <Feather name="chevron-right" size={14} color="rgba(255, 255, 255, 0.7)" />
+                <Text style={[styles.heroCurrency, { color: colors.accentForeground }]}>
+                  INR
+                </Text>
+                <Feather name="chevron-right" size={14} color={colors.accentForeground} />
               </HStack>
             </HStack>
 
-            <Text style={styles.heroAmount}>
+            <Text style={[styles.heroAmount, { color: colors.accentForeground }]}>
               {isBalanceHidden ? '₹ ••••••' : formatMoney(netWorthMinor, 'INR')}
             </Text>
 
             <HStack justifyContent="space-between" alignItems="center" mt={8}>
-              <Text style={styles.heroSubtitle}>
+              <Text style={[styles.heroSubtitle, { color: colors.accentForeground }]}>
                 {activeAccounts.length === 0
                   ? 'Tap to add your first account'
                   : `Across ${activeAccounts.length} active account${activeAccounts.length === 1 ? '' : 's'}`}
               </Text>
-              <View style={styles.trendBadge}>
-                <Feather name="trending-up" size={11} color="#FFFFFF" style={{ marginRight: 4 }} />
-                <Text style={styles.trendBadgeText}>Active</Text>
+              <View style={[styles.trendBadge, { backgroundColor: colors.accentSubtle }]}>
+                <Feather name="trending-up" size={11} color={colors.accentPrimary} style={{ marginRight: 4 }} />
+                <Text style={[styles.trendBadgeText, { color: colors.accentPrimary }]}>Active</Text>
               </View>
             </HStack>
           </View>
@@ -335,8 +346,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               },
             ]}
           >
-            <View style={[styles.quickActionIconCircle, { backgroundColor: 'rgba(124, 58, 237, 0.12)' }]}>
-              <Ionicons name="wallet-outline" size={15} color="#7C3AED" />
+            <View style={[styles.quickActionIconCircle, { backgroundColor: colors.accentSubtle }]}>
+              <Ionicons name="wallet-outline" size={15} color={colors.accentPrimary} />
             </View>
             <Text color={colors.textPrimary} fontSize={11} fontWeight="700" mt={4}>
               Accounts
@@ -690,9 +701,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   heroCardContainer: {
-    backgroundColor: '#7C3AED',
     overflow: 'hidden',
-    shadowColor: '#7C3AED',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.28,
     shadowRadius: 10,

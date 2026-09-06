@@ -184,9 +184,15 @@ function MainNavigator() {
             <TouchableOpacity
               onPress={() => openAddModal()}
               activeOpacity={0.85}
-              style={[styles.centerFab, { backgroundColor: '#7C3AED' }]}
+              style={[
+                styles.centerFab,
+                {
+                  backgroundColor: colors.accentPrimary,
+                  shadowColor: colors.accentPrimary,
+                },
+              ]}
             >
-              <Ionicons name="add" size={28} color="#FFFFFF" />
+              <Ionicons name="add" size={28} color={colors.accentForeground} />
             </TouchableOpacity>
           </View>
 
