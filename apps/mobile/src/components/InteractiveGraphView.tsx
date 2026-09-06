@@ -28,6 +28,7 @@ const CANVAS_HEIGHT = 440;
 const NODE_RADIUS = 28;
 const EXPENSE_NODE_WIDTH = 92;
 const EXPENSE_NODE_HEIGHT = 46;
+const LANE_SPACING = 26; // Distance between parallel directional arrows
 
 export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
   nodes,
@@ -42,11 +43,24 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
   const [positions, setPositions] = useState<Record<string, NodePosition>>({});
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
-  // Position reference to keep drag handler in sync without re-creating responders
+  // Zoom and Pan State
+  const [scale, setScale] = useState<number>(1);
+  const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // Refs to allow high-frequency gesture updates without stale closures or re-rendering responders
   const positionsRef = useRef<Record<string, NodePosition>>({});
   positionsRef.current = positions;
 
   const dragOffsetsRef = useRef<Record<string, { startX: number; startY: number }>>({});
+  const scaleRef = useRef<number>(1);
+  scaleRef.current = scale;
+
+  const panOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  panOffsetRef.current = panOffset;
+
+  const pinchDistRef = useRef<number | null>(null);
+  const pinchStartScaleRef = useRef<number>(1);
+  const panStartOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // Compute initial layout (circular / bipartite)
   const computeInitialLayout = () => {
@@ -74,7 +88,7 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
             NODE_RADIUS + 12,
             Math.min(canvasWidth - NODE_RADIUS - 12, memberStartX + idx * memberSpacing)
           ),
-          y: 70 + (idx % 2 === 0 ? 0 : 25),
+          y: 75 + (idx % 2 === 0 ? 0 : 25),
         };
       });
 
@@ -122,20 +136,145 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
     });
   }, [edges, activeFilter]);
 
-  // Persistent PanResponders: created ONCE per node ID, never recreated mid-drag!
+  // Group visible edges by unordered node pair to prevent overlapping arrows
+  const edgesByPair = useMemo(() => {
+    const map = new Map<string, DependencyGraphEdge[]>();
+    for (const edge of visibleEdges) {
+      const u = edge.source;
+      const v = edge.target;
+      const pairKey = u < v ? `${u}:::${v}` : `${v}:::${u}`;
+      const list = map.get(pairKey) || [];
+      list.push(edge);
+      map.set(pairKey, list);
+    }
+    return map;
+  }, [visibleEdges]);
+
+  // Zoom & Pan Handlers
+  const handleZoomIn = () => {
+    setScale((s) => {
+      const next = Math.min(2.5, Number((s + 0.25).toFixed(2)));
+      scaleRef.current = next;
+      return next;
+    });
+  };
+
+  const handleZoomOut = () => {
+    setScale((s) => {
+      const next = Math.max(0.5, Number((s - 0.25).toFixed(2)));
+      scaleRef.current = next;
+      return next;
+    });
+  };
+
+  const handleResetZoomPan = () => {
+    setScale(1);
+    scaleRef.current = 1;
+    setPanOffset({ x: 0, y: 0 });
+    panOffsetRef.current = { x: 0, y: 0 };
+  };
+
+  const handleAutoLayout = () => {
+    const fresh = computeInitialLayout();
+    setPositions(fresh);
+    positionsRef.current = fresh;
+    handleResetZoomPan();
+    setSelectedNodeId(null);
+  };
+
+  // Canvas PanResponder for background panning and two-finger pinch-to-zoom
+  const canvasPanResponder = useMemo(() => {
+    return PanResponder.create({
+      onStartShouldSetPanResponder: (evt) => {
+        return evt.nativeEvent.touches.length >= 1;
+      },
+      onStartShouldSetPanResponderCapture: (evt) => {
+        return evt.nativeEvent.touches.length >= 2;
+      },
+      onMoveShouldSetPanResponder: (_, gesture) => {
+        return Math.abs(gesture.dx) > 2 || Math.abs(gesture.dy) > 2;
+      },
+      onMoveShouldSetPanResponderCapture: (evt) => {
+        return evt.nativeEvent.touches.length >= 2;
+      },
+      onPanResponderGrant: (evt) => {
+        const touches = evt.nativeEvent.touches;
+        panStartOffsetRef.current = { ...panOffsetRef.current };
+        if (touches.length >= 2) {
+          const t0 = touches[0]!;
+          const t1 = touches[1]!;
+          const dx = t1.pageX - t0.pageX;
+          const dy = t1.pageY - t0.pageY;
+          pinchDistRef.current = Math.sqrt(dx * dx + dy * dy);
+          pinchStartScaleRef.current = scaleRef.current;
+        } else {
+          pinchDistRef.current = null;
+        }
+      },
+      onPanResponderMove: (evt, gesture) => {
+        const touches = evt.nativeEvent.touches;
+        if (touches.length >= 2) {
+          // Pinch to zoom
+          const t0 = touches[0]!;
+          const t1 = touches[1]!;
+          const dx = t1.pageX - t0.pageX;
+          const dy = t1.pageY - t0.pageY;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (pinchDistRef.current === null) {
+            pinchDistRef.current = dist;
+            pinchStartScaleRef.current = scaleRef.current;
+            panStartOffsetRef.current = { ...panOffsetRef.current };
+          } else if (pinchDistRef.current > 10) {
+            const factor = dist / pinchDistRef.current;
+            const nextScale = Math.min(
+              2.5,
+              Math.max(0.5, Number((pinchStartScaleRef.current * factor).toFixed(3)))
+            );
+            setScale(nextScale);
+            scaleRef.current = nextScale;
+          }
+
+          // Combined two-finger pan
+          const maxPan = canvasWidth * 1.2;
+          const nextPanX = Math.max(-maxPan, Math.min(maxPan, panStartOffsetRef.current.x + gesture.dx));
+          const nextPanY = Math.max(-CANVAS_HEIGHT * 1.2, Math.min(CANVAS_HEIGHT * 1.2, panStartOffsetRef.current.y + gesture.dy));
+          setPanOffset({ x: nextPanX, y: nextPanY });
+          panOffsetRef.current = { x: nextPanX, y: nextPanY };
+        } else if (touches.length === 1 && !pinchDistRef.current) {
+          // Single-finger canvas background pan
+          const maxPan = canvasWidth * 1.2;
+          const nextPanX = Math.max(-maxPan, Math.min(maxPan, panStartOffsetRef.current.x + gesture.dx));
+          const nextPanY = Math.max(-CANVAS_HEIGHT * 1.2, Math.min(CANVAS_HEIGHT * 1.2, panStartOffsetRef.current.y + gesture.dy));
+          setPanOffset({ x: nextPanX, y: nextPanY });
+          panOffsetRef.current = { x: nextPanX, y: nextPanY };
+        }
+      },
+      onPanResponderRelease: (_, gesture) => {
+        pinchDistRef.current = null;
+        // Deselect if user just tapped empty canvas background
+        if (Math.abs(gesture.dx) < 3 && Math.abs(gesture.dy) < 3) {
+          setSelectedNodeId(null);
+        }
+      },
+      onPanResponderTerminate: () => {
+        pinchDistRef.current = null;
+      },
+    });
+  }, [canvasWidth]);
+
+  // Persistent PanResponders for each individual node
   const panResponders = useMemo(() => {
     const responders: Record<string, ReturnType<typeof PanResponder.create>> = {};
 
     nodes.forEach((node) => {
       responders[node.id] = PanResponder.create({
         onStartShouldSetPanResponder: () => true,
-        onStartShouldSetPanResponderCapture: () => true,
+        onStartShouldSetPanResponderCapture: () => false,
         onMoveShouldSetPanResponder: (_, gesture) => {
           return Math.abs(gesture.dx) > 1 || Math.abs(gesture.dy) > 1;
         },
-        onMoveShouldSetPanResponderCapture: (_, gesture) => {
-          return Math.abs(gesture.dx) > 1 || Math.abs(gesture.dy) > 1;
-        },
+        onMoveShouldSetPanResponderCapture: () => false,
         onPanResponderGrant: () => {
           setSelectedNodeId(node.id);
           const current = positionsRef.current[node.id] || {
@@ -150,8 +289,16 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
         onPanResponderMove: (_, gesture) => {
           const origin = dragOffsetsRef.current[node.id];
           if (!origin) return;
-          const newX = Math.max(34, Math.min(canvasWidth - 34, origin.startX + gesture.dx));
-          const newY = Math.max(34, Math.min(CANVAS_HEIGHT - 34, origin.startY + gesture.dy));
+
+          // Scale gesture delta by current zoom scale for 1:1 finger tracking!
+          const currentScale = scaleRef.current || 1;
+          const scaledDx = gesture.dx / currentScale;
+          const scaledDy = gesture.dy / currentScale;
+
+          const margin = 120;
+          const newX = Math.max(-margin, Math.min(canvasWidth + margin, origin.startX + scaledDx));
+          const newY = Math.max(-margin, Math.min(CANVAS_HEIGHT + margin, origin.startY + scaledDy));
+
           setPositions((prev) => {
             const next = { ...prev, [node.id]: { x: newX, y: newY } };
             positionsRef.current = next;
@@ -174,7 +321,7 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
 
   return (
     <View style={styles.container}>
-      {/* Visual Canvas */}
+      {/* Visual Canvas Box */}
       <View
         style={[
           styles.canvasBox,
@@ -186,241 +333,356 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
             borderRadius: tokens.radius.lg,
           },
         ]}
+        {...canvasPanResponder.panHandlers}
       >
-        {/* SVG Directional Connections Layer */}
-        <Svg style={StyleSheet.absoluteFill} width={canvasWidth} height={CANVAS_HEIGHT}>
-          {visibleEdges.map((edge) => {
-            const p1 = positions[edge.source];
-            const p2 = positions[edge.target];
-            if (!p1 || !p2) return null;
+        {/* Transformable Canvas Layer (Zoom & Pan Container) */}
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              transform: [
+                { translateX: panOffset.x },
+                { translateY: panOffset.y },
+                { scale: scale },
+              ],
+            },
+          ]}
+        >
+          {/* SVG Directional Connections Layer */}
+          <Svg style={StyleSheet.absoluteFill} width={canvasWidth} height={CANVAS_HEIGHT}>
+            {visibleEdges.map((edge) => {
+              const pairKey =
+                edge.source < edge.target
+                  ? `${edge.source}:::${edge.target}`
+                  : `${edge.target}:::${edge.source}`;
+              const pairGroup = edgesByPair.get(pairKey) || [edge];
+              const groupSize = pairGroup.length;
+              const indexInGroup = pairGroup.indexOf(edge);
 
-            const isPay = edge.label.toLowerCase().includes("paid");
-            const isSettle = edge.label.toLowerCase().includes("settled");
-            const isHighlighted =
-              !selectedNodeId || edge.source === selectedNodeId || edge.target === selectedNodeId;
+              const nodeA = edge.source < edge.target ? edge.source : edge.target;
+              const nodeB = edge.source < edge.target ? edge.target : edge.source;
+              const posA = positions[nodeA];
+              const posB = positions[nodeB];
+              const sourceCenter = positions[edge.source];
+              const targetCenter = positions[edge.target];
 
-            let strokeColor = colors.textMuted;
-            if (isSettle) strokeColor = colors.success;
-            else if (isPay) strokeColor = colors.accentPrimary;
-            else strokeColor = colors.warning;
+              if (!posA || !posB || !sourceCenter || !targetCenter) return null;
 
-            const dx = p2.x - p1.x;
-            const dy = p2.y - p1.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < 15) return null;
+              // Centerline distance & normal vector for this node pair
+              const cdx = posB.x - posA.x;
+              const cdy = posB.y - posA.y;
+              const cdist = Math.sqrt(cdx * cdx + cdy * cdy);
+              if (cdist < 15) return null;
 
-            const ux = dx / dist;
-            const uy = dy / dist;
-            const px = -uy;
-            const py = ux;
+              const cux = cdx / cdist;
+              const cuy = cdy / cdist;
+              const normX = -cuy;
+              const normY = cux;
 
-            // Target node radius: member has radius 28, expense card has ~24
-            const targetNode = nodes.find((n) => n.id === edge.target);
-            const isTargetMember = targetNode?.type === "member";
-            const targetRadius = isTargetMember ? NODE_RADIUS + 4 : 26;
+              // Perpendicular offset for parallel lanes (prevents overlapping!)
+              const offset =
+                groupSize > 1 ? (indexInGroup - (groupSize - 1) / 2) * LANE_SPACING : 0;
+              const shiftX = offset * normX;
+              const shiftY = offset * normY;
 
-            // Arrow tip lands right before target node edge
-            const tipX = p2.x - ux * targetRadius;
-            const tipY = p2.y - uy * targetRadius;
+              const shiftedSource = { x: sourceCenter.x + shiftX, y: sourceCenter.y + shiftY };
+              const shiftedTarget = { x: targetCenter.x + shiftX, y: targetCenter.y + shiftY };
 
-            // Arrow dimensions
-            const arrowLength = 10;
-            const arrowWidth = 5;
-            const baseX = tipX - ux * arrowLength;
-            const baseY = tipY - uy * arrowLength;
+              // Vector along directed edge
+              const edx = shiftedTarget.x - shiftedSource.x;
+              const edy = shiftedTarget.y - shiftedSource.y;
+              const edist = Math.sqrt(edx * edx + edy * edy);
+              if (edist < 15) return null;
 
-            const leftX = baseX + px * arrowWidth;
-            const leftY = baseY + py * arrowWidth;
-            const rightX = baseX - px * arrowWidth;
-            const rightY = baseY - py * arrowWidth;
+              const eux = edx / edist;
+              const euy = edy / edist;
+              const epx = -euy;
+              const epy = eux;
 
-            // Midpoint badge
-            const midX = (p1.x + p2.x) / 2;
-            const midY = (p1.y + p2.y) / 2;
+              const isPay = edge.label.toLowerCase().includes("paid");
+              const isSettle = edge.label.toLowerCase().includes("settled");
+              const isHighlighted =
+                !selectedNodeId || edge.source === selectedNodeId || edge.target === selectedNodeId;
 
-            return (
-              <G key={edge.id} opacity={isHighlighted ? 1 : 0.22}>
-                {/* Directional Connecting Line from p1 to arrowhead base */}
-                <Line
-                  x1={p1.x}
-                  y1={p1.y}
-                  x2={baseX}
-                  y2={baseY}
-                  stroke={strokeColor}
-                  strokeWidth={isHighlighted ? 2.5 : 1.5}
-                  strokeDasharray={isSettle ? "5 3" : undefined}
-                />
+              let strokeColor = colors.textMuted;
+              if (isSettle) strokeColor = colors.success;
+              else if (isPay) strokeColor = colors.accentPrimary;
+              else strokeColor = colors.warning;
 
-                {/* Directional Arrowhead pointing at target */}
-                <Polygon
-                  points={`${tipX},${tipY} ${leftX},${leftY} ${rightX},${rightY}`}
-                  fill={strokeColor}
-                />
+              // Node radius calculations to land arrow cleanly outside node
+              const targetNode = nodes.find((n) => n.id === edge.target);
+              const isTargetMember = targetNode?.type === "member";
+              const targetRadius = isTargetMember ? NODE_RADIUS : 24;
+              const targetDistAlongEdge = Math.max(
+                12,
+                Math.sqrt(Math.max(16, targetRadius * targetRadius - offset * offset))
+              );
 
-                {/* Midpoint Amount Badge Background */}
-                <Rect
-                  x={midX - 35}
-                  y={midY - 11}
-                  width={70}
-                  height={22}
-                  rx={6}
-                  fill={colors.surface}
-                  stroke={strokeColor}
-                  strokeWidth={1}
-                />
+              const sourceNode = nodes.find((n) => n.id === edge.source);
+              const isSourceMember = sourceNode?.type === "member";
+              const sourceRadius = isSourceMember ? NODE_RADIUS : 24;
+              const sourceDistAlongEdge = Math.max(
+                12,
+                Math.sqrt(Math.max(16, sourceRadius * sourceRadius - offset * offset))
+              );
 
-                {/* Midpoint Amount & Flow Indicator */}
-                <SvgText
-                  x={midX}
-                  y={midY + 4}
-                  fontSize="9"
-                  fontWeight="bold"
-                  fill={colors.textPrimary}
-                  textAnchor="middle"
+              // Arrow tip ends right outside target boundary
+              const tipX = shiftedTarget.x - eux * (targetDistAlongEdge + 3);
+              const tipY = shiftedTarget.y - euy * (targetDistAlongEdge + 3);
+
+              // Arrowhead dimensions
+              const arrowLength = 9;
+              const arrowWidth = 5;
+              const baseX = tipX - eux * arrowLength;
+              const baseY = tipY - euy * arrowLength;
+
+              const leftX = baseX + epx * arrowWidth;
+              const leftY = baseY + epy * arrowWidth;
+              const rightX = baseX - epx * arrowWidth;
+              const rightY = baseY - epy * arrowWidth;
+
+              // Line start lands right outside source boundary
+              const startX = shiftedSource.x + eux * (sourceDistAlongEdge + 3);
+              const startY = shiftedSource.y + euy * (sourceDistAlongEdge + 3);
+
+              // Non-overlapping amount badge placement (staggered along the path)
+              let t = 0.5;
+              if (groupSize === 2) {
+                t = indexInGroup === 0 ? 0.38 : 0.62;
+              } else if (groupSize > 2) {
+                t = 0.5 + (indexInGroup - (groupSize - 1) / 2) * 0.14;
+              }
+              t = Math.max(0.24, Math.min(0.76, t));
+
+              const badgeX = shiftedSource.x + (shiftedTarget.x - shiftedSource.x) * t;
+              const badgeY = shiftedSource.y + (shiftedTarget.y - shiftedSource.y) * t;
+
+              const badgeLabel = `${formatMoney(edge.amountMinor, currency)} →`;
+              const badgeWidth = Math.max(68, badgeLabel.length * 6.5 + 12);
+              const badgeHeight = 20;
+
+              return (
+                <G key={edge.id} opacity={isHighlighted ? 1 : 0.2}>
+                  {/* Directional Connecting Line from source to arrowhead base */}
+                  <Line
+                    x1={startX}
+                    y1={startY}
+                    x2={baseX}
+                    y2={baseY}
+                    stroke={strokeColor}
+                    strokeWidth={isHighlighted ? 2.5 : 1.5}
+                    strokeDasharray={isSettle ? "5 3" : undefined}
+                  />
+
+                  {/* Directional Arrowhead pointing at target */}
+                  <Polygon
+                    points={`${tipX},${tipY} ${leftX},${leftY} ${rightX},${rightY}`}
+                    fill={strokeColor}
+                  />
+
+                  {/* Midpoint Amount Badge Background */}
+                  <Rect
+                    x={badgeX - badgeWidth / 2}
+                    y={badgeY - badgeHeight / 2}
+                    width={badgeWidth}
+                    height={badgeHeight}
+                    rx={5}
+                    fill={colors.surface}
+                    stroke={strokeColor}
+                    strokeWidth={1}
+                  />
+
+                  {/* Midpoint Amount & Directional Arrow */}
+                  <SvgText
+                    x={badgeX}
+                    y={badgeY + 3.5}
+                    fontSize="9"
+                    fontWeight="bold"
+                    fill={colors.textPrimary}
+                    textAnchor="middle"
+                  >
+                    {badgeLabel}
+                  </SvgText>
+                </G>
+              );
+            })}
+          </Svg>
+
+          {/* Draggable Node Views */}
+          {nodes.map((node) => {
+            const pos = positions[node.id] || { x: canvasWidth / 2, y: CANVAS_HEIGHT / 2 };
+            const isSelected = selectedNodeId === node.id;
+            const isMember = node.type === "member";
+            const isSettlement = node.type === "settlement";
+
+            const pan = panResponders[node.id];
+
+            if (isMember) {
+              return (
+                <View
+                  key={node.id}
+                  {...(pan ? pan.panHandlers : {})}
+                  style={[
+                    styles.memberNode,
+                    {
+                      left: pos.x - NODE_RADIUS,
+                      top: pos.y - NODE_RADIUS,
+                      backgroundColor: isSelected ? colors.accentPrimary : colors.surface,
+                      borderColor: isSelected ? colors.accentForeground : colors.border,
+                      borderWidth: isSelected ? 2.5 : 1.5,
+                    },
+                  ]}
                 >
-                  {formatMoney(edge.amountMinor, currency)} →
-                </SvgText>
-              </G>
-            );
-          })}
-        </Svg>
+                  <Ionicons
+                    name="person"
+                    size={16}
+                    color={isSelected ? colors.accentForeground : colors.accentPrimary}
+                  />
+                  <Text
+                    style={[
+                      styles.memberNodeText,
+                      { color: isSelected ? colors.accentForeground : colors.textPrimary },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {node.label}
+                  </Text>
+                </View>
+              );
+            }
 
-        {/* Draggable Node Views */}
-        {nodes.map((node) => {
-          const pos = positions[node.id] || { x: canvasWidth / 2, y: CANVAS_HEIGHT / 2 };
-          const isSelected = selectedNodeId === node.id;
-          const isMember = node.type === "member";
-          const isExpense = node.type === "expense";
-          const isSettlement = node.type === "settlement";
-
-          const pan = panResponders[node.id];
-
-          if (isMember) {
+            // Expense / Settlement node
             return (
               <View
                 key={node.id}
                 {...(pan ? pan.panHandlers : {})}
                 style={[
-                  styles.memberNode,
+                  styles.expenseNode,
                   {
-                    left: pos.x - NODE_RADIUS,
-                    top: pos.y - NODE_RADIUS,
-                    backgroundColor: isSelected ? colors.accentPrimary : colors.surface,
+                    left: pos.x - EXPENSE_NODE_WIDTH / 2,
+                    top: pos.y - EXPENSE_NODE_HEIGHT / 2,
+                    backgroundColor: isSettlement
+                      ? colors.success
+                      : isSelected
+                      ? colors.accentPrimary
+                      : colors.surface,
                     borderColor: isSelected ? colors.accentForeground : colors.border,
-                    borderWidth: isSelected ? 2.5 : 1.5,
+                    borderWidth: isSelected ? 2 : 1,
+                    borderRadius: tokens.radius.sm,
                   },
                 ]}
               >
-                <Ionicons
-                  name="person"
-                  size={16}
-                  color={isSelected ? colors.accentForeground : colors.accentPrimary}
-                />
-                <Text
-                  style={[
-                    styles.memberNodeText,
-                    { color: isSelected ? colors.accentForeground : colors.textPrimary },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {node.label}
-                </Text>
+                <View style={styles.expenseNodeIconRow}>
+                  <Ionicons
+                    name={isSettlement ? "checkmark-circle-outline" : "receipt-outline"}
+                    size={13}
+                    color={
+                      isSettlement
+                        ? "#FFFFFF"
+                        : isSelected
+                        ? colors.accentForeground
+                        : colors.accentPrimary
+                    }
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text
+                    style={[
+                      styles.expenseNodeTitle,
+                      {
+                        color: isSettlement
+                          ? "#FFFFFF"
+                          : isSelected
+                          ? colors.accentForeground
+                          : colors.textPrimary,
+                      },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {node.label}
+                  </Text>
+                </View>
+                {typeof node.data?.amountMinor === "number" && (
+                  <Text
+                    style={[
+                      styles.expenseNodeAmount,
+                      {
+                        color: isSettlement
+                          ? "#FFFFFF"
+                          : isSelected
+                          ? colors.accentForeground
+                          : colors.textSecondary,
+                      },
+                    ]}
+                  >
+                    {formatMoney(node.data.amountMinor as number, currency)}
+                  </Text>
+                )}
               </View>
             );
-          }
+          })}
+        </View>
 
-          // Expense / Settlement node
-          return (
-            <View
-              key={node.id}
-              {...(pan ? pan.panHandlers : {})}
-              style={[
-                styles.expenseNode,
-                {
-                  left: pos.x - EXPENSE_NODE_WIDTH / 2,
-                  top: pos.y - EXPENSE_NODE_HEIGHT / 2,
-                  backgroundColor: isSettlement
-                    ? colors.success
-                    : isSelected
-                    ? colors.accentPrimary
-                    : colors.surface,
-                  borderColor: isSelected ? colors.accentForeground : colors.border,
-                  borderWidth: isSelected ? 2 : 1,
-                  borderRadius: tokens.radius.sm,
-                },
-              ]}
-            >
-              <View style={styles.expenseNodeIconRow}>
-                <Ionicons
-                  name={isSettlement ? "checkmark-circle-outline" : "receipt-outline"}
-                  size={13}
-                  color={
-                    isSettlement
-                      ? "#FFFFFF"
-                      : isSelected
-                      ? colors.accentForeground
-                      : colors.accentPrimary
-                  }
-                  style={{ marginRight: 4 }}
-                />
-                <Text
-                  style={[
-                    styles.expenseNodeTitle,
-                    {
-                      color: isSettlement
-                        ? "#FFFFFF"
-                        : isSelected
-                        ? colors.accentForeground
-                        : colors.textPrimary,
-                    },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {node.label}
-                </Text>
-              </View>
-              {typeof node.data?.amountMinor === "number" && (
-                <Text
-                  style={[
-                    styles.expenseNodeAmount,
-                    {
-                      color: isSettlement
-                        ? "#FFFFFF"
-                        : isSelected
-                        ? colors.accentForeground
-                        : colors.textSecondary,
-                    },
-                  ]}
-                >
-                  {formatMoney(node.data.amountMinor as number, currency)}
-                </Text>
-              )}
-            </View>
-          );
-        })}
-
-        {/* Reset Layout Floating Button */}
-        <TouchableOpacity
-          onPress={() => {
-            const fresh = computeInitialLayout();
-            setPositions(fresh);
-            positionsRef.current = fresh;
-          }}
+        {/* Floating Zoom & Layout Controls Toolbar */}
+        <View
           style={[
-            styles.resetBtn,
-            { backgroundColor: colors.surface, borderColor: colors.border },
+            styles.zoomToolbar,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              borderRadius: tokens.radius.sm,
+            },
           ]}
-          activeOpacity={0.7}
         >
-          <Feather name="refresh-cw" size={13} color={colors.textSecondary} style={{ marginRight: 4 }} />
-          <Text style={[styles.resetBtnText, { color: colors.textSecondary }]}>Auto Layout</Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleZoomIn}
+            activeOpacity={0.7}
+            style={styles.zoomBtn}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          >
+            <Feather name="plus" size={14} color={colors.textPrimary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={handleResetZoomPan}
+            activeOpacity={0.7}
+            style={[styles.zoomLevelBtn, { borderColor: colors.border }]}
+          >
+            <Text style={[styles.zoomLevelText, { color: colors.textPrimary }]}>
+              {Math.round(scale * 100)}%
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={handleZoomOut}
+            activeOpacity={0.7}
+            style={styles.zoomBtn}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          >
+            <Feather name="minus" size={14} color={colors.textPrimary} />
+          </TouchableOpacity>
+
+          <View style={[styles.zoomDivider, { backgroundColor: colors.border }]} />
+
+          <TouchableOpacity
+            onPress={handleAutoLayout}
+            activeOpacity={0.7}
+            style={styles.autoLayoutBtn}
+          >
+            <Feather
+              name="refresh-cw"
+              size={12}
+              color={colors.textSecondary}
+              style={{ marginRight: 4 }}
+            />
+            <Text style={[styles.autoLayoutText, { color: colors.textSecondary }]}>Layout</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Interactive Helper Hint */}
         <View style={styles.hintBadge}>
-          <Feather name="move" size={11} color={colors.textMuted} style={{ marginRight: 3 }} />
+          <Feather name="move" size={11} color={colors.textMuted} style={{ marginRight: 4 }} />
           <Text style={[styles.hintText, { color: colors.textMuted }]}>
-            Drag nodes to explore directional flows (→)
+            Pinch / + - to zoom • Drag background to pan • Drag nodes
           </Text>
         </View>
       </View>
@@ -536,30 +798,62 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginTop: 2,
   },
-  resetBtn: {
+  zoomToolbar: {
     position: "absolute",
     top: 10,
     right: 10,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
     borderWidth: 1,
+    paddingHorizontal: 4,
+    paddingVertical: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    elevation: 3,
   },
-  resetBtnText: {
-    fontSize: 11,
+  zoomBtn: {
+    width: 26,
+    height: 26,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  zoomLevelBtn: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+  },
+  zoomLevelText: {
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  zoomDivider: {
+    width: 1,
+    height: 16,
+    marginHorizontal: 4,
+  },
+  autoLayoutBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  autoLayoutText: {
+    fontSize: 10,
     fontWeight: "600",
   },
   hintBadge: {
     position: "absolute",
     bottom: 8,
-    left: 12,
+    left: 10,
     flexDirection: "row",
     alignItems: "center",
+    maxWidth: "92%",
   },
   hintText: {
-    fontSize: 10,
+    fontSize: 9.5,
   },
   nodeDetailCard: {
     padding: 14,
