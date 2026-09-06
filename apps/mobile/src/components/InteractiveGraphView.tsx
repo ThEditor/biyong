@@ -43,6 +43,10 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
   const [positions, setPositions] = useState<Record<string, NodePosition>>({});
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
+  // Interaction Mode: 'move' (default, dragging nodes has top priority) vs 'pan' (dragging anywhere pans canvas)
+  const [interactionMode, setInteractionMode] = useState<"move" | "pan">("move");
+  const isDraggingNodeRef = useRef<boolean>(false);
+
   // Zoom and Pan State
   const [scale, setScale] = useState<number>(1);
   const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -186,17 +190,29 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
   const canvasPanResponder = useMemo(() => {
     return PanResponder.create({
       onStartShouldSetPanResponder: (evt) => {
-        return evt.nativeEvent.touches.length >= 1;
+        if (isDraggingNodeRef.current) return false;
+        if (evt.nativeEvent.touches.length >= 2) return true;
+        return interactionMode === "pan";
       },
       onStartShouldSetPanResponderCapture: (evt) => {
-        return evt.nativeEvent.touches.length >= 2;
+        if (isDraggingNodeRef.current) return false;
+        if (evt.nativeEvent.touches.length >= 2) return true;
+        return interactionMode === "pan";
       },
       onMoveShouldSetPanResponder: (_, gesture) => {
-        return Math.abs(gesture.dx) > 2 || Math.abs(gesture.dy) > 2;
+        if (isDraggingNodeRef.current) return false;
+        if (gesture.numberActiveTouches >= 2) return true;
+        if (interactionMode === "pan") {
+          return Math.abs(gesture.dx) > 2 || Math.abs(gesture.dy) > 2;
+        }
+        return false;
       },
-      onMoveShouldSetPanResponderCapture: (evt) => {
-        return evt.nativeEvent.touches.length >= 2;
+      onMoveShouldSetPanResponderCapture: (evt, gesture) => {
+        if (isDraggingNodeRef.current) return false;
+        if (evt.nativeEvent.touches.length >= 2 || gesture.numberActiveTouches >= 2) return true;
+        return interactionMode === "pan";
       },
+      onPanResponderTerminationRequest: () => true,
       onPanResponderGrant: (evt) => {
         const touches = evt.nativeEvent.touches;
         panStartOffsetRef.current = { ...panOffsetRef.current };
@@ -241,8 +257,8 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
           const nextPanY = Math.max(-CANVAS_HEIGHT * 1.2, Math.min(CANVAS_HEIGHT * 1.2, panStartOffsetRef.current.y + gesture.dy));
           setPanOffset({ x: nextPanX, y: nextPanY });
           panOffsetRef.current = { x: nextPanX, y: nextPanY };
-        } else if (touches.length === 1 && !pinchDistRef.current) {
-          // Single-finger canvas background pan
+        } else if (touches.length === 1 && !pinchDistRef.current && interactionMode === "pan") {
+          // Single-finger canvas background pan (in Pan mode)
           const maxPan = canvasWidth * 1.2;
           const nextPanX = Math.max(-maxPan, Math.min(maxPan, panStartOffsetRef.current.x + gesture.dx));
           const nextPanY = Math.max(-CANVAS_HEIGHT * 1.2, Math.min(CANVAS_HEIGHT * 1.2, panStartOffsetRef.current.y + gesture.dy));
@@ -261,7 +277,7 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
         pinchDistRef.current = null;
       },
     });
-  }, [canvasWidth]);
+  }, [canvasWidth, interactionMode]);
 
   // Persistent PanResponders for each individual node
   const panResponders = useMemo(() => {
@@ -269,13 +285,13 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
 
     nodes.forEach((node) => {
       responders[node.id] = PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onStartShouldSetPanResponderCapture: () => false,
-        onMoveShouldSetPanResponder: (_, gesture) => {
-          return Math.abs(gesture.dx) > 1 || Math.abs(gesture.dy) > 1;
-        },
-        onMoveShouldSetPanResponderCapture: () => false,
+        onStartShouldSetPanResponder: () => interactionMode === "move",
+        onStartShouldSetPanResponderCapture: () => interactionMode === "move",
+        onMoveShouldSetPanResponder: () => interactionMode === "move",
+        onMoveShouldSetPanResponderCapture: () => interactionMode === "move",
+        onPanResponderTerminationRequest: () => false,
         onPanResponderGrant: () => {
+          isDraggingNodeRef.current = true;
           setSelectedNodeId(node.id);
           const current = positionsRef.current[node.id] || {
             x: canvasWidth / 2,
@@ -295,7 +311,7 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
           const scaledDx = gesture.dx / currentScale;
           const scaledDy = gesture.dy / currentScale;
 
-          const margin = 120;
+          const margin = 140;
           const newX = Math.max(-margin, Math.min(canvasWidth + margin, origin.startX + scaledDx));
           const newY = Math.max(-margin, Math.min(CANVAS_HEIGHT + margin, origin.startY + scaledDy));
 
@@ -306,16 +322,18 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
           });
         },
         onPanResponderRelease: () => {
+          isDraggingNodeRef.current = false;
           delete dragOffsetsRef.current[node.id];
         },
         onPanResponderTerminate: () => {
+          isDraggingNodeRef.current = false;
           delete dragOffsetsRef.current[node.id];
         },
       });
     });
 
     return responders;
-  }, [nodes, canvasWidth]);
+  }, [nodes, canvasWidth, interactionMode]);
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
 
@@ -633,13 +651,47 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
             },
           ]}
         >
+          {/* Interaction Mode Toggle: Move Nodes vs Pan Canvas */}
+          <TouchableOpacity
+            onPress={() => setInteractionMode((m) => (m === "move" ? "pan" : "move"))}
+            activeOpacity={0.7}
+            style={[
+              styles.modeToggleBtn,
+              {
+                backgroundColor:
+                  interactionMode === "move" ? colors.accentPrimary : colors.surfaceSubtle,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <Ionicons
+              name={interactionMode === "move" ? "hand-right" : "move"}
+              size={12}
+              color={interactionMode === "move" ? colors.accentForeground : colors.textSecondary}
+              style={{ marginRight: 3 }}
+            />
+            <Text
+              style={[
+                styles.modeToggleText,
+                {
+                  color:
+                    interactionMode === "move" ? colors.accentForeground : colors.textSecondary,
+                },
+              ]}
+            >
+              {interactionMode === "move" ? "Move" : "Pan"}
+            </Text>
+          </TouchableOpacity>
+
+          <View style={[styles.zoomDivider, { backgroundColor: colors.border }]} />
+
           <TouchableOpacity
             onPress={handleZoomIn}
             activeOpacity={0.7}
             style={styles.zoomBtn}
             hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
           >
-            <Feather name="plus" size={14} color={colors.textPrimary} />
+            <Feather name="plus" size={13} color={colors.textPrimary} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -658,7 +710,7 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
             style={styles.zoomBtn}
             hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
           >
-            <Feather name="minus" size={14} color={colors.textPrimary} />
+            <Feather name="minus" size={13} color={colors.textPrimary} />
           </TouchableOpacity>
 
           <View style={[styles.zoomDivider, { backgroundColor: colors.border }]} />
@@ -670,9 +722,9 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
           >
             <Feather
               name="refresh-cw"
-              size={12}
+              size={11}
               color={colors.textSecondary}
-              style={{ marginRight: 4 }}
+              style={{ marginRight: 3 }}
             />
             <Text style={[styles.autoLayoutText, { color: colors.textSecondary }]}>Layout</Text>
           </TouchableOpacity>
@@ -680,9 +732,16 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
 
         {/* Interactive Helper Hint */}
         <View style={styles.hintBadge}>
-          <Feather name="move" size={11} color={colors.textMuted} style={{ marginRight: 4 }} />
+          <Ionicons
+            name={interactionMode === "move" ? "hand-right-outline" : "move"}
+            size={11}
+            color={colors.textMuted}
+            style={{ marginRight: 4 }}
+          />
           <Text style={[styles.hintText, { color: colors.textMuted }]}>
-            Pinch / + - to zoom • Drag background to pan • Drag nodes
+            {interactionMode === "move"
+              ? "Drag nodes freely • Pinch / +/- to zoom • Switch to 'Pan' to scroll canvas"
+              : "Drag anywhere to pan canvas • Pinch / +/- to zoom • Switch to 'Move' to drag nodes"}
           </Text>
         </View>
       </View>
@@ -812,6 +871,18 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 3,
     elevation: 3,
+  },
+  modeToggleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  modeToggleText: {
+    fontSize: 10,
+    fontWeight: "700",
   },
   zoomBtn: {
     width: 26,
