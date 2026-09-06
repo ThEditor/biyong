@@ -122,6 +122,7 @@ export const GroupExpenseSchema = z.object({
   currency: CurrencyCodeSchema,
   date: z.string(),
   createdByMemberId: z.string().min(1),
+  createdByUserId: z.string().nullable().default(null),
   payers: z.array(PayerEntrySchema).min(1),
   splitMethod: SplitMethodSchema,
   allocations: z.array(SplitAllocationSchema).min(1),
@@ -299,4 +300,66 @@ export type SyncPullResponse = z.infer<typeof SyncPullResponseSchema>;
 
 export const SyncStatusSchema = z.enum(['idle', 'syncing', 'synced', 'error', 'offline']);
 export type SyncStatus = z.infer<typeof SyncStatusSchema>;
+
+// Shared Group & Invitation Schemas
+export const GroupInvitationSchema = z.object({
+  id: z.string().min(1),
+  groupId: z.string().min(1),
+  inviterUserId: z.string().min(1),
+  inviteCode: z.string().min(1),
+  email: z.string().email().nullable().default(null),
+  status: z.enum(['pending', 'accepted', 'expired']).default('pending'),
+  expiresAt: z.string().datetime(),
+  createdAt: z.string().datetime(),
+});
+export type GroupInvitation = z.infer<typeof GroupInvitationSchema>;
+
+export const CreateSharedGroupRequestSchema = z.object({
+  name: z.string().min(1),
+  currency: CurrencyCodeSchema.default('INR'),
+});
+export type CreateSharedGroupRequest = z.infer<typeof CreateSharedGroupRequestSchema>;
+
+export const InviteMemberRequestSchema = z.object({
+  email: z.string().email().optional(),
+});
+export type InviteMemberRequest = z.infer<typeof InviteMemberRequestSchema>;
+
+export const JoinGroupRequestSchema = z.object({
+  inviteCode: z.string().min(1),
+});
+export type JoinGroupRequest = z.infer<typeof JoinGroupRequestSchema>;
+
+export const CreateSharedExpenseRequestSchema = z.object({
+  title: z.string().min(1),
+  amountMinor: z.number().int().positive(),
+  currency: CurrencyCodeSchema.default('INR'),
+  date: z.string(),
+  payers: z.array(PayerEntrySchema).min(1),
+  splitMethod: SplitMethodSchema,
+  allocations: z.array(SplitAllocationSchema).min(1),
+  notes: z.string().nullable().default(null),
+});
+export type CreateSharedExpenseRequest = z.infer<typeof CreateSharedExpenseRequestSchema>;
+
+export const UpdateSharedExpenseRequestSchema = z.object({
+  title: z.string().min(1).optional(),
+  amountMinor: z.number().int().positive().optional(),
+  currency: CurrencyCodeSchema.optional(),
+  date: z.string().optional(),
+  payers: z.array(PayerEntrySchema).min(1).optional(),
+  splitMethod: SplitMethodSchema.optional(),
+  allocations: z.array(SplitAllocationSchema).min(1).optional(),
+  notes: z.string().nullable().optional(),
+});
+export type UpdateSharedExpenseRequest = z.infer<typeof UpdateSharedExpenseRequestSchema>;
+
+export const CreateSettlementRequestSchema = z.object({
+  fromMemberId: z.string().min(1),
+  toMemberId: z.string().min(1),
+  amountMinor: z.number().int().positive(),
+  currency: CurrencyCodeSchema.default('INR'),
+  notes: z.string().nullable().default(null),
+});
+export type CreateSettlementRequest = z.infer<typeof CreateSettlementRequestSchema>;
 
