@@ -5,11 +5,16 @@ import {
   SqliteAccountRepository,
   SqliteTransactionRepository,
   SqliteCategoryRepository,
+  SqliteBudgetRepository,
+  SqliteGoalRepository,
 } from '@biyong/local-db';
 import {
   AccountUseCases,
   TransactionUseCases,
   CategoryUseCases,
+  BudgetUseCases,
+  GoalUseCases,
+  AnalyticsUseCases,
 } from '@biyong/application';
 import type { Account } from '@biyong/schemas';
 
@@ -43,9 +48,14 @@ export interface LedgerDatabaseServices {
   accountRepo: SqliteAccountRepository;
   txRepo: SqliteTransactionRepository;
   categoryRepo: SqliteCategoryRepository;
+  budgetRepo: SqliteBudgetRepository;
+  goalRepo: SqliteGoalRepository;
   accountUseCases: AccountUseCases;
   txUseCases: TransactionUseCases;
   categoryUseCases: CategoryUseCases;
+  budgetUseCases: BudgetUseCases;
+  goalUseCases: GoalUseCases;
+  analyticsUseCases: AnalyticsUseCases;
 }
 
 let dbInstance: SQLite.SQLiteDatabase | null = null;
@@ -69,11 +79,16 @@ export async function initDatabase(): Promise<LedgerDatabaseServices> {
   const accountRepo = new SqliteAccountRepository(driver);
   const txRepo = new SqliteTransactionRepository(driver);
   const categoryRepo = new SqliteCategoryRepository(driver);
+  const budgetRepo = new SqliteBudgetRepository(driver);
+  const goalRepo = new SqliteGoalRepository(driver);
 
   // Initialize use cases
   const accountUseCases = new AccountUseCases(accountRepo, txRepo);
   const txUseCases = new TransactionUseCases(accountRepo, txRepo, categoryRepo);
   const categoryUseCases = new CategoryUseCases(categoryRepo);
+  const budgetUseCases = new BudgetUseCases(budgetRepo, txRepo);
+  const goalUseCases = new GoalUseCases(goalRepo);
+  const analyticsUseCases = new AnalyticsUseCases(txRepo);
 
   // App starts with no data (clean slate for user)
 
@@ -82,9 +97,14 @@ export async function initDatabase(): Promise<LedgerDatabaseServices> {
     accountRepo,
     txRepo,
     categoryRepo,
+    budgetRepo,
+    goalRepo,
     accountUseCases,
     txUseCases,
     categoryUseCases,
+    budgetUseCases,
+    goalUseCases,
+    analyticsUseCases,
   };
 
   return cachedServices;

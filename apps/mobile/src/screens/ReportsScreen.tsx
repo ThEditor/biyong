@@ -31,11 +31,17 @@ const MONTH_NAMES = [
 
 export const ReportsScreen: React.FC = () => {
   const { colors, tokens } = useAppTheme();
-  const { transactions, categories } = useLedger();
+  const { transactions, categories, fixedVsVariable, spendingTrends } = useLedger();
 
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1); // 1-indexed (1-12)
+
+  const formatTrendMonth = (periodStr: string) => {
+    const [y, m] = periodStr.split('-');
+    const mIndex = parseInt(m, 10) - 1;
+    return `${MONTH_NAMES[mIndex]?.substring(0, 3) ?? m} ${y}`;
+  };
 
   const handlePrevMonth = () => {
     if (selectedMonth === 1) {
@@ -343,6 +349,177 @@ export const ReportsScreen: React.FC = () => {
               </VStack>
             )}
           </>
+        )}
+
+        {/* Fixed vs Variable Spending Breakdown Card */}
+        {fixedVsVariable && fixedVsVariable.totalSpendingMinor > 0 && (
+          <VStack space="sm">
+            <Text color={colors.textPrimary} fontSize={12} fontWeight="bold" letterSpacing={0.8}>
+              FIXED VS VARIABLE SPENDING
+            </Text>
+
+            <Card
+              backgroundColor={colors.surface}
+              borderColor={colors.border}
+              borderWidth={1}
+              borderRadius={tokens.radius.md}
+              p={tokens.spacing.md}
+            >
+              <HStack justifyContent="space-between" alignItems="center">
+                <VStack>
+                  <Text color={colors.textSecondary} fontSize={11} fontWeight="bold" letterSpacing={0.5}>
+                    FIXED SPENDING
+                  </Text>
+                  <Text color={colors.accentPrimary} fontSize={18} fontWeight="bold" mt={4}>
+                    {formatMoney(fixedVsVariable.fixedSpendingMinor, 'INR')}
+                  </Text>
+                  <Text color={colors.textMuted} fontSize={11}>
+                    {fixedVsVariable.fixedPercentage}% of spending
+                  </Text>
+                </VStack>
+
+                <VStack alignItems="flex-end">
+                  <Text color={colors.textSecondary} fontSize={11} fontWeight="bold" letterSpacing={0.5}>
+                    VARIABLE SPENDING
+                  </Text>
+                  <Text color={colors.warning} fontSize={18} fontWeight="bold" mt={4}>
+                    {formatMoney(fixedVsVariable.variableSpendingMinor, 'INR')}
+                  </Text>
+                  <Text color={colors.textMuted} fontSize={11}>
+                    {fixedVsVariable.variablePercentage}% of spending
+                  </Text>
+                </VStack>
+              </HStack>
+
+              {/* Two-color Split Horizontal Bar */}
+              <HStack
+                height={8}
+                width="100%"
+                backgroundColor={colors.surfaceSubtle}
+                borderRadius={tokens.radius.full}
+                overflow="hidden"
+                my={12}
+              >
+                {fixedVsVariable.fixedPercentage > 0 && (
+                  <Box
+                    height="100%"
+                    width={`${fixedVsVariable.fixedPercentage}%`}
+                    backgroundColor={colors.accentPrimary}
+                  />
+                )}
+                {fixedVsVariable.variablePercentage > 0 && (
+                  <Box
+                    height="100%"
+                    width={`${fixedVsVariable.variablePercentage}%`}
+                    backgroundColor={colors.warning}
+                  />
+                )}
+              </HStack>
+
+              {/* Legend & Plain English explanation */}
+              <HStack space="md" alignItems="center" mb={8}>
+                <HStack alignItems="center" space="xs">
+                  <Box
+                    width={8}
+                    height={8}
+                    borderRadius={tokens.radius.full}
+                    backgroundColor={colors.accentPrimary}
+                  />
+                  <Text color={colors.textSecondary} fontSize={11} fontWeight="600">
+                    Fixed ({fixedVsVariable.fixedPercentage}%)
+                  </Text>
+                </HStack>
+                <HStack alignItems="center" space="xs">
+                  <Box
+                    width={8}
+                    height={8}
+                    borderRadius={tokens.radius.full}
+                    backgroundColor={colors.warning}
+                  />
+                  <Text color={colors.textSecondary} fontSize={11} fontWeight="600">
+                    Variable ({fixedVsVariable.variablePercentage}%)
+                  </Text>
+                </HStack>
+              </HStack>
+
+              <Text color={colors.textMuted} fontSize={11} lineHeight={16}>
+                Fixed includes recurring bills & utilities, Variable includes day-to-day spending.
+              </Text>
+            </Card>
+          </VStack>
+        )}
+
+        {/* 6-Month Spending Trends Section */}
+        {spendingTrends.length > 0 && (
+          <VStack space="sm">
+            <Text color={colors.textPrimary} fontSize={12} fontWeight="bold" letterSpacing={0.8}>
+              SPENDING & SAVINGS TRENDS
+            </Text>
+
+            {spendingTrends.map((trend) => (
+              <Card
+                key={trend.period}
+                backgroundColor={colors.surface}
+                borderColor={colors.border}
+                borderWidth={1}
+                borderRadius={tokens.radius.md}
+                p={tokens.spacing.md}
+              >
+                <HStack justifyContent="space-between" alignItems="center" mb={6}>
+                  <Text color={colors.textPrimary} fontSize={14} fontWeight="700">
+                    {formatTrendMonth(trend.period)}
+                  </Text>
+                  <Badge
+                    backgroundColor={trend.savingsRate >= 20 ? colors.accentSubtle : colors.surfaceSubtle}
+                    borderRadius={tokens.radius.sm}
+                    px={6}
+                    py={2}
+                  >
+                    <BadgeText
+                      color={trend.savingsRate >= 20 ? colors.accentPrimary : colors.textSecondary}
+                      fontSize={10}
+                      fontWeight="bold"
+                    >
+                      Savings Rate: {trend.savingsRate}%
+                    </BadgeText>
+                  </Badge>
+                </HStack>
+
+                <HStack justifyContent="space-between" alignItems="center" mt={4}>
+                  <VStack>
+                    <Text color={colors.textMuted} fontSize={10}>
+                      Income
+                    </Text>
+                    <Text color={colors.success} fontSize={13} fontWeight="600">
+                      +{formatMoney(trend.incomeMinor, 'INR')}
+                    </Text>
+                  </VStack>
+
+                  <VStack alignItems="center">
+                    <Text color={colors.textMuted} fontSize={10}>
+                      Expenses
+                    </Text>
+                    <Text color={colors.danger} fontSize={13} fontWeight="600">
+                      -{formatMoney(trend.expenseMinor, 'INR')}
+                    </Text>
+                  </VStack>
+
+                  <VStack alignItems="flex-end">
+                    <Text color={colors.textMuted} fontSize={10}>
+                      Savings
+                    </Text>
+                    <Text
+                      color={trend.savingsMinor >= 0 ? colors.textPrimary : colors.danger}
+                      fontSize={13}
+                      fontWeight="700"
+                    >
+                      {formatMoney(trend.savingsMinor, 'INR')}
+                    </Text>
+                  </VStack>
+                </HStack>
+              </Card>
+            ))}
+          </VStack>
         )}
       </ScrollView>
     </Box>

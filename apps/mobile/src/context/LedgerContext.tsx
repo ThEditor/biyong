@@ -1,5 +1,11 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
-import type { Account, Category, Transaction } from '@biyong/schemas';
+import type { Account, Category, Transaction, Budget, Goal } from '@biyong/schemas';
+import type {
+  BudgetStatus,
+  GoalProgress,
+  FixedVsVariableSpending,
+  SpendingTrendItem,
+} from '@biyong/domain';
 import type { AccountWithDerivedBalance } from '@biyong/application';
 import { initDatabase, type LedgerDatabaseServices } from '../db/sqlite-driver';
 
@@ -23,6 +29,10 @@ export interface LedgerContextValue {
   accounts: AccountWithDerivedBalance[];
   transactions: Transaction[];
   categories: Category[];
+  budgets: Array<BudgetStatus & { budget: Budget }>;
+  goals: Array<GoalProgress & { goal: Goal }>;
+  fixedVsVariable: FixedVsVariableSpending | null;
+  spendingTrends: SpendingTrendItem[];
   netWorthMinor: number;
   stats: DatabaseStats;
   refreshLedger: () => Promise<void>;
@@ -38,6 +48,21 @@ export interface LedgerContextValue {
     currency?: string;
   }) => Promise<void>;
   archiveAccount: (id: string) => Promise<void>;
+  createBudget: (data: {
+    categoryId: string;
+    amountMinor: number;
+    period: 'weekly' | 'monthly';
+    rollover: boolean;
+  }) => Promise<void>;
+  deleteBudget: (id: string) => Promise<void>;
+  createGoal: (data: {
+    title: string;
+    targetAmountMinor: number;
+    currentAmountMinor?: number;
+    targetDate: string;
+  }) => Promise<void>;
+  contributeToGoal: (goalId: string, amountMinor: number) => Promise<void>;
+  deleteGoal: (id: string) => Promise<void>;
   seedDemoData: () => Promise<void>;
   clearAllData: () => Promise<void>;
 
@@ -67,6 +92,10 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [accounts, setAccounts] = useState<AccountWithDerivedBalance[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [budgets, setBudgets] = useState<Array<BudgetStatus & { budget: Budget }>>([]);
+  const [goals, setGoals] = useState<Array<GoalProgress & { goal: Goal }>>([]);
+  const [fixedVsVariable, setFixedVsVariable] = useState<FixedVsVariableSpending | null>(null);
+  const [spendingTrends, setSpendingTrends] = useState<SpendingTrendItem[]>([]);
   const [netWorthMinor, setNetWorthMinor] = useState<number>(0);
   const [stats, setStats] = useState<DatabaseStats>({
     accountsCount: 0,
@@ -84,15 +113,24 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const refreshLedger = useCallback(async () => {
     if (!services) return;
     try {
-      const [accsWithBalances, txList, catList] = await Promise.all([
-        services.accountUseCases.listAccountsWithDerivedBalances(true),
-        services.txRepo.findAll(),
-        services.categoryUseCases.listCategories(),
-      ]);
+      const [accsWithBalances, txList, catList, budgetList, goalList, fixedVar, trends] =
+        await Promise.all([
+          services.accountUseCases.listAccountsWithDerivedBalances(true),
+          services.txRepo.findAll(),
+          services.categoryUseCases.listCategories(),
+          services.budgetUseCases.listBudgetsWithStatus(),
+          services.goalUseCases.listGoalsWithProgress(),
+          services.analyticsUseCases.getFixedVsVariable(),
+          services.analyticsUseCases.getSpendingTrends(6),
+        ]);
 
       setAccounts(accsWithBalances);
       setTransactions(txList);
       setCategories(catList);
+      setBudgets(budgetList);
+      setGoals(goalList);
+      setFixedVsVariable(fixedVar);
+      setSpendingTrends(trends);
 
       const net = accsWithBalances
         .filter((a) => !a.isArchived)
@@ -116,15 +154,24 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         const s = await initDatabase();
         setServices(s);
 
-        const [accsWithBalances, txList, catList] = await Promise.all([
-          s.accountUseCases.listAccountsWithDerivedBalances(true),
-          s.txRepo.findAll(),
-          s.categoryUseCases.listCategories(),
-        ]);
+        const [accsWithBalances, txList, catList, budgetList, goalList, fixedVar, trends] =
+          await Promise.all([
+            s.accountUseCases.listAccountsWithDerivedBalances(true),
+            s.txRepo.findAll(),
+            s.categoryUseCases.listCategories(),
+            s.budgetUseCases.listBudgetsWithStatus(),
+            s.goalUseCases.listGoalsWithProgress(),
+            s.analyticsUseCases.getFixedVsVariable(),
+            s.analyticsUseCases.getSpendingTrends(6),
+          ]);
 
         setAccounts(accsWithBalances);
         setTransactions(txList);
         setCategories(catList);
+        setBudgets(budgetList);
+        setGoals(goalList);
+        setFixedVsVariable(fixedVar);
+        setSpendingTrends(trends);
 
         const net = accsWithBalances
           .filter((a) => !a.isArchived)
@@ -220,6 +267,85 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     async (id: string) => {
       if (!services) throw new Error('Database not ready');
       await services.accountUseCases.archiveAccount(id);
+      await refreshLedger();
+    },
+    [services, refreshLedger]
+  );
+
+  const createBudget = useCallback(
+    async (data: {
+      categoryId: string;
+      amountMinor: number;
+      period: 'weekly' | 'monthly';
+      rollover: boolean;
+    }) => {
+      if (!services) throw new Error('Database not ready');
+      const now = new Date().toISOString();
+      const newBudget: Budget = {
+        id: generateId('budget'),
+        categoryId: data.categoryId,
+        amountMinor: data.amountMinor,
+        currency: 'INR',
+        period: data.period,
+        startDate: now.substring(0, 10),
+        endDate: null,
+        rollover: data.rollover,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await services.budgetUseCases.createBudget(newBudget);
+      await refreshLedger();
+    },
+    [services, refreshLedger]
+  );
+
+  const deleteBudget = useCallback(
+    async (id: string) => {
+      if (!services) throw new Error('Database not ready');
+      await services.budgetUseCases.deleteBudget(id);
+      await refreshLedger();
+    },
+    [services, refreshLedger]
+  );
+
+  const createGoal = useCallback(
+    async (data: {
+      title: string;
+      targetAmountMinor: number;
+      currentAmountMinor?: number;
+      targetDate: string;
+    }) => {
+      if (!services) throw new Error('Database not ready');
+      const now = new Date().toISOString();
+      const newGoal: Goal = {
+        id: generateId('goal'),
+        title: data.title.trim(),
+        targetAmountMinor: data.targetAmountMinor,
+        currentAmountMinor: data.currentAmountMinor ?? 0,
+        currency: 'INR',
+        targetDate: data.targetDate,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await services.goalUseCases.createGoal(newGoal);
+      await refreshLedger();
+    },
+    [services, refreshLedger]
+  );
+
+  const contributeToGoal = useCallback(
+    async (goalId: string, amountMinor: number) => {
+      if (!services) throw new Error('Database not ready');
+      await services.goalUseCases.contributeToGoal(goalId, amountMinor);
+      await refreshLedger();
+    },
+    [services, refreshLedger]
+  );
+
+  const deleteGoal = useCallback(
+    async (id: string) => {
+      if (!services) throw new Error('Database not ready');
+      await services.goalUseCases.deleteGoal(id);
       await refreshLedger();
     },
     [services, refreshLedger]
@@ -337,6 +463,86 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
     }
 
+    // Seed sample budgets
+    await services.driver.exec('DELETE FROM budgets');
+    const demoBudgets: Omit<Budget, 'createdAt' | 'updatedAt'>[] = [
+      {
+        id: generateId('budget_demo'),
+        categoryId: 'cat-housing',
+        amountMinor: 2500000, // ₹25,000
+        currency: 'INR',
+        period: 'monthly',
+        startDate: `${year}-${month}-01`,
+        endDate: null,
+        rollover: false,
+      },
+      {
+        id: generateId('budget_demo'),
+        categoryId: 'cat-groceries',
+        amountMinor: 1000000, // ₹10,000
+        currency: 'INR',
+        period: 'monthly',
+        startDate: `${year}-${month}-01`,
+        endDate: null,
+        rollover: true,
+      },
+      {
+        id: generateId('budget_demo'),
+        categoryId: 'cat-food',
+        amountMinor: 500000, // ₹5,000
+        currency: 'INR',
+        period: 'monthly',
+        startDate: `${year}-${month}-01`,
+        endDate: null,
+        rollover: false,
+      },
+      {
+        id: generateId('budget_demo'),
+        categoryId: 'cat-transport',
+        amountMinor: 300000, // ₹3,000
+        currency: 'INR',
+        period: 'monthly',
+        startDate: `${year}-${month}-01`,
+        endDate: null,
+        rollover: false,
+      },
+    ];
+    for (const b of demoBudgets) {
+      const ts = new Date().toISOString();
+      await services.budgetUseCases.createBudget({ ...b, createdAt: ts, updatedAt: ts });
+    }
+
+    // Seed sample goals
+    await services.driver.exec('DELETE FROM goals');
+    const target6Months = new Date(now.getFullYear(), now.getMonth() + 6, 1)
+      .toISOString()
+      .substring(0, 10);
+    const target3Months = new Date(now.getFullYear(), now.getMonth() + 3, 15)
+      .toISOString()
+      .substring(0, 10);
+    const demoGoals: Omit<Goal, 'createdAt' | 'updatedAt'>[] = [
+      {
+        id: generateId('goal_demo'),
+        title: 'Emergency Fund',
+        targetAmountMinor: 10000000, // ₹1,00,000
+        currentAmountMinor: 4500000, // ₹45,000
+        currency: 'INR',
+        targetDate: target6Months,
+      },
+      {
+        id: generateId('goal_demo'),
+        title: 'MacBook Pro M-Series',
+        targetAmountMinor: 12000000, // ₹1,20,000
+        currentAmountMinor: 7500000, // ₹75,000
+        currency: 'INR',
+        targetDate: target3Months,
+      },
+    ];
+    for (const g of demoGoals) {
+      const ts = new Date().toISOString();
+      await services.goalUseCases.createGoal({ ...g, createdAt: ts, updatedAt: ts });
+    }
+
     await refreshLedger();
   }, [services, refreshLedger]);
 
@@ -344,6 +550,8 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (!services) return;
     await services.driver.exec('DELETE FROM transactions');
     await services.driver.exec('DELETE FROM accounts');
+    await services.driver.exec('DELETE FROM budgets');
+    await services.driver.exec('DELETE FROM goals');
     await refreshLedger();
   }, [services, refreshLedger]);
 
@@ -407,6 +615,10 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       accounts,
       transactions,
       categories,
+      budgets,
+      goals,
+      fixedVsVariable,
+      spendingTrends,
       netWorthMinor,
       stats,
       refreshLedger,
@@ -415,6 +627,11 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       deleteTransaction,
       createAccount,
       archiveAccount,
+      createBudget,
+      deleteBudget,
+      createGoal,
+      contributeToGoal,
+      deleteGoal,
       seedDemoData,
       clearAllData,
       hasCompletedOnboarding,
@@ -433,6 +650,10 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       accounts,
       transactions,
       categories,
+      budgets,
+      goals,
+      fixedVsVariable,
+      spendingTrends,
       netWorthMinor,
       stats,
       refreshLedger,
@@ -441,6 +662,11 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       deleteTransaction,
       createAccount,
       archiveAccount,
+      createBudget,
+      deleteBudget,
+      createGoal,
+      contributeToGoal,
+      deleteGoal,
       seedDemoData,
       clearAllData,
       hasCompletedOnboarding,

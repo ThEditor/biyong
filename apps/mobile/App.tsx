@@ -16,12 +16,13 @@ import { LedgerProvider, useLedger } from './src/context/LedgerContext';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { AccountsScreen } from './src/screens/AccountsScreen';
 import { TransactionsScreen } from './src/screens/TransactionsScreen';
+import { BudgetsGoalsScreen } from './src/screens/BudgetsGoalsScreen';
 import { ReportsScreen } from './src/screens/ReportsScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { QuickAddModal } from './src/components/QuickAddModal';
 import { OnboardingModal } from './src/components/OnboardingModal';
 
-type TabType = 'home' | 'accounts' | 'transactions' | 'reports' | 'settings';
+type TabType = 'home' | 'accounts' | 'transactions' | 'budgets' | 'reports' | 'settings';
 
 interface TabItem {
   id: TabType;
@@ -45,15 +46,21 @@ const TABS: TabItem[] = [
   },
   {
     id: 'transactions',
-    label: 'Transactions',
+    label: 'Activity',
     activeIcon: 'swap-horizontal',
     inactiveIcon: 'swap-horizontal-outline',
   },
   {
-    id: 'reports',
-    label: 'Reports',
+    id: 'budgets',
+    label: 'Budgets',
     activeIcon: 'pie-chart',
     inactiveIcon: 'pie-chart-outline',
+  },
+  {
+    id: 'reports',
+    label: 'Reports',
+    activeIcon: 'bar-chart',
+    inactiveIcon: 'bar-chart-outline',
   },
   {
     id: 'settings',
@@ -100,6 +107,8 @@ function MainNavigator() {
         return <AccountsScreen />;
       case 'transactions':
         return <TransactionsScreen />;
+      case 'budgets':
+        return <BudgetsGoalsScreen />;
       case 'reports':
         return <ReportsScreen />;
       case 'settings':
@@ -203,7 +212,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 6,
-    paddingHorizontal: 12,
-    minWidth: 62,
+    paddingHorizontal: 6,
+    minWidth: 48,
   },
 });
