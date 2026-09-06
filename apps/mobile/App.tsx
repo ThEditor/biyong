@@ -76,16 +76,11 @@ function MainNavigator() {
   const [activeScreen, setActiveScreen] = useState<ScreenType>('home');
   const insets = useSafeAreaInsets();
 
-  // Top inset accounts for Android status bar and iOS notch / Dynamic Island
-  const topInset = Math.max(
-    insets.top,
-    Platform.OS === 'android' ? RNStatusBar.currentHeight || 24 : 0
-  );
   const bottomInset = Math.max(insets.bottom, Platform.OS === 'android' ? 12 : 8);
 
   if (!isReady) {
     return (
-      <View style={[styles.center, { backgroundColor: colors.background, paddingTop: topInset }]}>
+      <View style={[styles.center, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.accentPrimary} />
         <Text color={colors.textSecondary} fontSize={14} mt={14} fontWeight="600">
           Loading your financial ledger...
@@ -132,8 +127,7 @@ function MainNavigator() {
       style={[
         styles.rootContainer,
         {
-          backgroundColor: colors.background,
-          paddingTop: topInset,
+          backgroundColor: colors.background
         },
       ]}
     >
