@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 import type { Transaction } from '@biyong/schemas';
 import { formatMoney } from '@biyong/domain';
+import { Feather } from '@expo/vector-icons';
 import { useAppTheme } from '../theme/ThemeContext';
 
 export interface TransactionItemProps {
@@ -25,19 +26,19 @@ export const TransactionItem: React.FC<TransactionItemProps> = ({
   const isExpense = transaction.type === 'expense';
   const isTransfer = transaction.type === 'transfer';
 
-  // Glyph and color
-  let typeGlyph = '↗';
+  // Icon configuration
+  let iconName: keyof typeof Feather.glyphMap = 'arrow-up-right';
   let typeColor = colors.danger;
   let typeBg = colors.surfaceSubtle;
   let sign = '-';
 
   if (isIncome) {
-    typeGlyph = '↙';
+    iconName = 'arrow-down-left';
     typeColor = colors.success;
     typeBg = colors.accentSubtle;
     sign = '+';
   } else if (isTransfer) {
-    typeGlyph = '⇄';
+    iconName = 'repeat';
     typeColor = colors.accentPrimary;
     typeBg = colors.surfaceSubtle;
     sign = '';
@@ -86,7 +87,7 @@ export const TransactionItem: React.FC<TransactionItemProps> = ({
       ]}
     >
       <View style={[styles.iconContainer, { backgroundColor: typeBg, borderRadius: tokens.radius.sm }]}>
-        <Text style={[styles.iconText, { color: typeColor }]}>{typeGlyph}</Text>
+        <Feather name={iconName} size={18} color={typeColor} />
       </View>
 
       <View style={styles.mainContent}>
@@ -139,10 +140,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
-  },
-  iconText: {
-    fontSize: 18,
-    fontWeight: '700',
   },
   mainContent: {
     flex: 1,

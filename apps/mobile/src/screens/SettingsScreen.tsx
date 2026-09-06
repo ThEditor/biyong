@@ -1,5 +1,6 @@
 import React from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import {
   Box,
   Text,
@@ -8,44 +9,40 @@ import {
   VStack,
   Badge,
   BadgeText,
-  Button,
-  ButtonText,
 } from '@gluestack-ui/themed';
 import {
-  PALETTES,
   type AccentTheme,
-  type ThemeMode,
 } from '@biyong/ui';
 import { useAppTheme } from '../theme/ThemeContext';
 import { useLedger } from '../context/LedgerContext';
 
 const ACCENT_LIST: Array<{ id: AccentTheme; label: string; previewColor: string }> = [
-  { id: 'default', label: 'Default Emerald', previewColor: '#10B981' },
-  { id: 'ocean', label: 'Ocean Blue', previewColor: '#38BDF8' },
-  { id: 'forest', label: 'Forest Green', previewColor: '#22C55E' },
-  { id: 'violet', label: 'Royal Violet', previewColor: '#A855F7' },
-  { id: 'amber', label: 'Warm Amber', previewColor: '#F59E0B' },
-  { id: 'rose', label: 'Crimson Rose', previewColor: '#FB7185' },
+  { id: 'default', label: 'Emerald', previewColor: '#10B981' },
+  { id: 'ocean', label: 'Ocean', previewColor: '#38BDF8' },
+  { id: 'forest', label: 'Forest', previewColor: '#22C55E' },
+  { id: 'violet', label: 'Violet', previewColor: '#A855F7' },
+  { id: 'amber', label: 'Amber', previewColor: '#F59E0B' },
+  { id: 'rose', label: 'Rose', previewColor: '#FB7185' },
 ];
 
 export const SettingsScreen: React.FC = () => {
   const { mode, accent, resolvedMode, colors, tokens, setMode, setAccent } = useAppTheme();
-  const { stats, seedDemoData, clearAllData } = useLedger();
+  const { stats, seedDemoData, clearAllData, resetOnboarding } = useLedger();
 
   const handleSeedDemo = () => {
     Alert.alert(
-      'Seed Demo Ledger Data',
-      'This will populate sample salary income, rent expense, grocery expenses, and an account transfer. Continue?',
+      'Load Sample Financial Data',
+      'This will create sample bank accounts, salary income, rent expense, and everyday grocery transactions to help you test the ledger. Continue?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Seed Data',
+          text: 'Load Data',
           onPress: async () => {
             try {
               await seedDemoData();
-              Alert.alert('Success', 'Sample transactions and transfers created successfully.');
+              Alert.alert('Success', 'Sample financial records created.');
             } catch (err: any) {
-              Alert.alert('Error', err?.message || 'Failed to seed demo data.');
+              Alert.alert('Error', err?.message || 'Failed to populate sample data.');
             }
           },
         },
@@ -55,24 +52,28 @@ export const SettingsScreen: React.FC = () => {
 
   const handleResetData = () => {
     Alert.alert(
-      'Reset Entire Local Database',
-      'This will permanently delete all transactions and custom accounts. This cannot be undone.',
+      'Clear All Ledger Data',
+      'This will permanently erase all accounts, transactions, and preferences from your device. This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Reset Database',
+          text: 'Clear All Data',
           style: 'destructive',
           onPress: async () => {
             try {
               await clearAllData();
-              Alert.alert('Database Reset', 'Ledger has been cleared and reset to pristine state.');
+              Alert.alert('Ledger Reset', 'All data has been cleared. You have a fresh blank ledger.');
             } catch (err: any) {
-              Alert.alert('Error', err?.message || 'Failed to reset database.');
+              Alert.alert('Error', err?.message || 'Failed to clear data.');
             }
           },
         },
       ]
     );
+  };
+
+  const handleReplayOnboarding = () => {
+    resetOnboarding();
   };
 
   return (
@@ -81,7 +82,7 @@ export const SettingsScreen: React.FC = () => {
         {/* Appearance Section */}
         <VStack space="sm">
           <Text color={colors.textPrimary} fontSize={12} fontWeight="bold" letterSpacing={0.8}>
-            APPEARANCE & THEME
+            APPEARANCE & DISPLAY
           </Text>
 
           {/* Theme Mode Card */}
@@ -93,16 +94,22 @@ export const SettingsScreen: React.FC = () => {
             p={tokens.spacing.md}
           >
             <Text color={colors.textSecondary} fontSize={12} fontWeight="bold" mb={10}>
-              COLOR MODE
+              THEME MODE
             </Text>
 
             <HStack space="sm">
-              {(['dark', 'light', 'system'] as const).map((m) => {
-                const isSelected = mode === m;
+              {(
+                [
+                  { id: 'dark', label: 'Dark', icon: 'moon-outline' },
+                  { id: 'light', label: 'Light', icon: 'sunny-outline' },
+                  { id: 'system', label: 'System', icon: 'phone-portrait-outline' },
+                ] as const
+              ).map((m) => {
+                const isSelected = mode === m.id;
                 return (
                   <TouchableOpacity
-                    key={m}
-                    onPress={() => setMode(m)}
+                    key={m.id}
+                    onPress={() => setMode(m.id)}
                     style={[
                       styles.modeBtn,
                       {
@@ -112,20 +119,23 @@ export const SettingsScreen: React.FC = () => {
                       },
                     ]}
                   >
+                    <Ionicons
+                      name={m.icon}
+                      size={16}
+                      color={isSelected ? colors.accentForeground : colors.textSecondary}
+                    />
                     <Text
                       color={isSelected ? colors.accentForeground : colors.textSecondary}
                       fontSize={12}
                       fontWeight="bold"
+                      mt={4}
                     >
-                      {m.toUpperCase()}
+                      {m.label}
                     </Text>
                   </TouchableOpacity>
                 );
               })}
             </HStack>
-            <Text color={colors.textMuted} fontSize={11} mt={8}>
-              Active resolved mode: {resolvedMode.toUpperCase()}
-            </Text>
           </Card>
 
           {/* Accent Theme Presets Card */}
@@ -137,7 +147,7 @@ export const SettingsScreen: React.FC = () => {
             p={tokens.spacing.md}
           >
             <Text color={colors.textSecondary} fontSize={12} fontWeight="bold" mb={10}>
-              ACCENT PALETTE PRESET
+              ACCENT COLOR
             </Text>
 
             <VStack space="sm">
@@ -158,8 +168,8 @@ export const SettingsScreen: React.FC = () => {
                   >
                     <HStack alignItems="center" space="sm">
                       <Box
-                        width={20}
-                        height={20}
+                        width={18}
+                        height={18}
                         borderRadius={tokens.radius.full}
                         backgroundColor={item.previewColor}
                       />
@@ -173,16 +183,7 @@ export const SettingsScreen: React.FC = () => {
                     </HStack>
 
                     {isSelected && (
-                      <Badge
-                        backgroundColor={colors.accentPrimary}
-                        borderRadius={tokens.radius.sm}
-                        px={6}
-                        py={2}
-                      >
-                        <BadgeText color={colors.accentForeground} fontSize={10} fontWeight="bold">
-                          ACTIVE
-                        </BadgeText>
-                      </Badge>
+                      <Feather name="check" size={16} color={colors.accentPrimary} />
                     )}
                   </TouchableOpacity>
                 );
@@ -191,10 +192,99 @@ export const SettingsScreen: React.FC = () => {
           </Card>
         </VStack>
 
-        {/* Database Statistics Section */}
+        {/* Data & Guide Section */}
         <VStack space="sm">
           <Text color={colors.textPrimary} fontSize={12} fontWeight="bold" letterSpacing={0.8}>
-            OFFLINE SQLITE STATISTICS
+            DATA & PREFERENCES
+          </Text>
+
+          <Card
+            backgroundColor={colors.surface}
+            borderColor={colors.border}
+            borderWidth={1}
+            borderRadius={tokens.radius.md}
+            p={tokens.spacing.md}
+          >
+            <VStack space="md">
+              <TouchableOpacity
+                onPress={handleReplayOnboarding}
+                style={[
+                  styles.mgmtBtn,
+                  {
+                    backgroundColor: colors.surfaceSubtle,
+                    borderColor: colors.border,
+                    borderRadius: tokens.radius.sm,
+                  },
+                ]}
+              >
+                <HStack space="sm" alignItems="center">
+                  <Feather name="help-circle" size={18} color={colors.accentPrimary} />
+                  <VStack flex={1}>
+                    <Text color={colors.textPrimary} fontSize={14} fontWeight="600">
+                      View Welcome Guide
+                    </Text>
+                    <Text color={colors.textMuted} fontSize={11} mt={1}>
+                      Review features and intro screens anytime.
+                    </Text>
+                  </VStack>
+                </HStack>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleSeedDemo}
+                style={[
+                  styles.mgmtBtn,
+                  {
+                    backgroundColor: colors.surfaceSubtle,
+                    borderColor: colors.border,
+                    borderRadius: tokens.radius.sm,
+                  },
+                ]}
+              >
+                <HStack space="sm" alignItems="center">
+                  <Feather name="download" size={18} color={colors.accentPrimary} />
+                  <VStack flex={1}>
+                    <Text color={colors.textPrimary} fontSize={14} fontWeight="600">
+                      Load Sample Ledger Data
+                    </Text>
+                    <Text color={colors.textMuted} fontSize={11} mt={1}>
+                      Populates sample accounts and transactions for quick exploration.
+                    </Text>
+                  </VStack>
+                </HStack>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleResetData}
+                style={[
+                  styles.mgmtBtn,
+                  {
+                    backgroundColor: colors.surfaceSubtle,
+                    borderColor: colors.danger,
+                    borderRadius: tokens.radius.sm,
+                  },
+                ]}
+              >
+                <HStack space="sm" alignItems="center">
+                  <Feather name="trash-2" size={18} color={colors.danger} />
+                  <VStack flex={1}>
+                    <Text color={colors.danger} fontSize={14} fontWeight="600">
+                      Clear All Ledger Data
+                    </Text>
+                    <Text color={colors.textMuted} fontSize={11} mt={1}>
+                      Permanently wipes all accounts and records back to an empty ledger.
+                    </Text>
+                  </VStack>
+                </HStack>
+              </TouchableOpacity>
+            </VStack>
+          </Card>
+        </VStack>
+
+        {/* Technical Diagnostics Section (Only in Settings) */}
+        <VStack space="sm">
+          <Text color={colors.textMuted} fontSize={11} fontWeight="bold" letterSpacing={0.8}>
+            TECHNICAL DIAGNOSTICS & STORAGE
           </Text>
 
           <Card
@@ -209,14 +299,14 @@ export const SettingsScreen: React.FC = () => {
                 <Text color={colors.textSecondary} fontSize={13}>
                   Storage Engine
                 </Text>
-                <Text color={colors.textPrimary} fontSize={13} fontWeight="bold">
+                <Text color={colors.textPrimary} fontSize={13} fontWeight="600">
                   {stats.dbEngine}
                 </Text>
               </HStack>
 
               <HStack justifyContent="space-between" alignItems="center">
                 <Text color={colors.textSecondary} fontSize={13}>
-                  Architecture
+                  Network State
                 </Text>
                 <Badge
                   backgroundColor={colors.accentSubtle}
@@ -225,34 +315,34 @@ export const SettingsScreen: React.FC = () => {
                   py={2}
                 >
                   <BadgeText color={colors.accentPrimary} fontSize={10} fontWeight="bold">
-                    100% OFFLINE-FIRST
+                    OFFLINE ONLY
                   </BadgeText>
                 </Badge>
               </HStack>
 
               <HStack justifyContent="space-between" alignItems="center">
                 <Text color={colors.textSecondary} fontSize={13}>
-                  Local Accounts
+                  Local Accounts Stored
                 </Text>
-                <Text color={colors.textPrimary} fontSize={13} fontWeight="bold">
+                <Text color={colors.textPrimary} fontSize={13} fontWeight="600">
                   {stats.accountsCount}
                 </Text>
               </HStack>
 
               <HStack justifyContent="space-between" alignItems="center">
                 <Text color={colors.textSecondary} fontSize={13}>
-                  Transactions Recorded
+                  Local Transactions Stored
                 </Text>
-                <Text color={colors.textPrimary} fontSize={13} fontWeight="bold">
+                <Text color={colors.textPrimary} fontSize={13} fontWeight="600">
                   {stats.transactionsCount}
                 </Text>
               </HStack>
 
               <HStack justifyContent="space-between" alignItems="center">
                 <Text color={colors.textSecondary} fontSize={13}>
-                  Categories Loaded
+                  Local Taxonomy Categories
                 </Text>
-                <Text color={colors.textPrimary} fontSize={13} fontWeight="bold">
+                <Text color={colors.textPrimary} fontSize={13} fontWeight="600">
                   {stats.categoriesCount}
                 </Text>
               </HStack>
@@ -260,68 +350,13 @@ export const SettingsScreen: React.FC = () => {
           </Card>
         </VStack>
 
-        {/* Data Utilities Section */}
-        <VStack space="sm">
-          <Text color={colors.textPrimary} fontSize={12} fontWeight="bold" letterSpacing={0.8}>
-            DATA MANAGEMENT
-          </Text>
-
-          <Card
-            backgroundColor={colors.surface}
-            borderColor={colors.border}
-            borderWidth={1}
-            borderRadius={tokens.radius.md}
-            p={tokens.spacing.md}
-          >
-            <VStack space="md">
-              <TouchableOpacity
-                onPress={handleSeedDemo}
-                style={[
-                  styles.mgmtBtn,
-                  {
-                    backgroundColor: colors.surfaceSubtle,
-                    borderColor: colors.border,
-                    borderRadius: tokens.radius.sm,
-                  },
-                ]}
-              >
-                <Text color={colors.textPrimary} fontSize={14} fontWeight="600">
-                  ✨ Seed Sample Demo Ledger
-                </Text>
-                <Text color={colors.textMuted} fontSize={11} mt={2}>
-                  Adds realistic salary, rent, groceries, coffee, and ATM transfer.
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={handleResetData}
-                style={[
-                  styles.mgmtBtn,
-                  {
-                    backgroundColor: colors.surfaceSubtle,
-                    borderColor: colors.danger,
-                    borderRadius: tokens.radius.sm,
-                  },
-                ]}
-              >
-                <Text color={colors.danger} fontSize={14} fontWeight="600">
-                  🗑️ Reset All Ledger Data
-                </Text>
-                <Text color={colors.textMuted} fontSize={11} mt={2}>
-                  Deletes all entries and restores default starter accounts.
-                </Text>
-              </TouchableOpacity>
-            </VStack>
-          </Card>
-        </VStack>
-
-        {/* Footer info */}
-        <VStack alignItems="center" py={12}>
+        {/* App Version Info */}
+        <VStack alignItems="center" py={16}>
           <Text color={colors.textMuted} fontSize={12} fontWeight="600">
-            biyong mobile • Phase 1 Part C
+            Biyong v0.1.0
           </Text>
           <Text color={colors.textMuted} fontSize={11} mt={2}>
-            Local Money Ledger • Zero cloud dependencies
+            Deterministic Local Financial Ledger
           </Text>
         </VStack>
       </ScrollView>
@@ -337,7 +372,7 @@ const styles = StyleSheet.create({
   },
   modeBtn: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,

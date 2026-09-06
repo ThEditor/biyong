@@ -75,37 +75,7 @@ export async function initDatabase(): Promise<LedgerDatabaseServices> {
   const txUseCases = new TransactionUseCases(accountRepo, txRepo, categoryRepo);
   const categoryUseCases = new CategoryUseCases(categoryRepo);
 
-  // Check if default accounts exist, seed initial if ledger is pristine
-  const existingAccounts = await accountRepo.findAll();
-  if (existingAccounts.length === 0) {
-    const now = new Date().toISOString();
-    const defaultAccounts: Account[] = [
-      {
-        id: 'acc-bank-primary',
-        name: 'Primary Bank Account',
-        type: 'bank',
-        initialBalanceMinor: 2500000, // ₹25,000.00
-        currency: 'INR',
-        isArchived: false,
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        id: 'acc-cash',
-        name: 'Cash in Hand',
-        type: 'cash',
-        initialBalanceMinor: 500000, // ₹5,000.00
-        currency: 'INR',
-        isArchived: false,
-        createdAt: now,
-        updatedAt: now,
-      },
-    ];
-
-    for (const acc of defaultAccounts) {
-      await accountUseCases.createAccount(acc);
-    }
-  }
+  // App starts with no data (clean slate for user)
 
   cachedServices = {
     driver,

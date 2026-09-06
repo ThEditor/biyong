@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { generateMonthlyReport, formatMoney } from '@biyong/domain';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import {
   Box,
   Text,
@@ -9,8 +10,6 @@ import {
   VStack,
   Badge,
   BadgeText,
-  Button,
-  ButtonText,
 } from '@gluestack-ui/themed';
 import { useAppTheme } from '../theme/ThemeContext';
 import { useLedger } from '../context/LedgerContext';
@@ -76,24 +75,20 @@ export const ReportsScreen: React.FC = () => {
         >
           <HStack justifyContent="space-between" alignItems="center">
             <TouchableOpacity onPress={handlePrevMonth} style={styles.navArrowBtn}>
-              <Text color={colors.accentPrimary} fontSize={20} fontWeight="bold">
-                ‹
-              </Text>
+              <Feather name="chevron-left" size={20} color={colors.accentPrimary} />
             </TouchableOpacity>
 
             <VStack alignItems="center">
               <Text color={colors.textSecondary} fontSize={11} fontWeight="bold" letterSpacing={0.8}>
-                FINANCIAL REPORT
+                MONTHLY CASH FLOW
               </Text>
-              <Text color={colors.textPrimary} fontSize={18} fontWeight="bold">
+              <Text color={colors.textPrimary} fontSize={18} fontWeight="bold" mt={2}>
                 {monthLabel}
               </Text>
             </VStack>
 
             <TouchableOpacity onPress={handleNextMonth} style={styles.navArrowBtn}>
-              <Text color={colors.accentPrimary} fontSize={20} fontWeight="bold">
-                ›
-              </Text>
+              <Feather name="chevron-right" size={20} color={colors.accentPrimary} />
             </TouchableOpacity>
           </HStack>
         </Card>
@@ -110,10 +105,13 @@ export const ReportsScreen: React.FC = () => {
               borderRadius={tokens.radius.md}
               p={tokens.spacing.md}
             >
-              <Text color={colors.textSecondary} fontSize={11} fontWeight="bold" letterSpacing={0.5}>
-                TOTAL INCOME
-              </Text>
-              <Text color={colors.success} fontSize={18} fontWeight="bold" mt={4}>
+              <HStack justifyContent="space-between" alignItems="center">
+                <Text color={colors.textSecondary} fontSize={11} fontWeight="bold" letterSpacing={0.5}>
+                  TOTAL INCOME
+                </Text>
+                <Feather name="arrow-down-left" size={14} color={colors.success} />
+              </HStack>
+              <Text color={colors.success} fontSize={18} fontWeight="bold" mt={6}>
                 +{formatMoney(report.totalIncomeMinor, 'INR')}
               </Text>
               <Text color={colors.textMuted} fontSize={10} mt={2}>
@@ -130,14 +128,17 @@ export const ReportsScreen: React.FC = () => {
               borderRadius={tokens.radius.md}
               p={tokens.spacing.md}
             >
-              <Text color={colors.textSecondary} fontSize={11} fontWeight="bold" letterSpacing={0.5}>
-                TOTAL EXPENSE
-              </Text>
-              <Text color={colors.danger} fontSize={18} fontWeight="bold" mt={4}>
+              <HStack justifyContent="space-between" alignItems="center">
+                <Text color={colors.textSecondary} fontSize={11} fontWeight="bold" letterSpacing={0.5}>
+                  TOTAL SPENT
+                </Text>
+                <Feather name="arrow-up-right" size={14} color={colors.danger} />
+              </HStack>
+              <Text color={colors.danger} fontSize={18} fontWeight="bold" mt={6}>
                 -{formatMoney(report.totalExpenseMinor, 'INR')}
               </Text>
               <Text color={colors.textMuted} fontSize={10} mt={2}>
-                Excludes transfers
+                Transfers excluded
               </Text>
             </Card>
           </HStack>
@@ -152,14 +153,17 @@ export const ReportsScreen: React.FC = () => {
               borderRadius={tokens.radius.md}
               p={tokens.spacing.md}
             >
-              <Text color={colors.textSecondary} fontSize={11} fontWeight="bold" letterSpacing={0.5}>
-                NET SAVINGS
-              </Text>
+              <HStack justifyContent="space-between" alignItems="center">
+                <Text color={colors.textSecondary} fontSize={11} fontWeight="bold" letterSpacing={0.5}>
+                  NET SAVINGS
+                </Text>
+                <Feather name="shield" size={14} color={colors.accentPrimary} />
+              </HStack>
               <Text
                 color={report.netSavingsMinor >= 0 ? colors.textPrimary : colors.danger}
                 fontSize={18}
                 fontWeight="bold"
-                mt={4}
+                mt={6}
               >
                 {formatMoney(report.netSavingsMinor, 'INR')}
               </Text>
@@ -177,18 +181,21 @@ export const ReportsScreen: React.FC = () => {
               borderRadius={tokens.radius.md}
               p={tokens.spacing.md}
             >
-              <Text color={colors.textSecondary} fontSize={11} fontWeight="bold" letterSpacing={0.5}>
-                SAVINGS RATE
-              </Text>
-              <HStack alignItems="center" space="xs" mt={4}>
+              <HStack justifyContent="space-between" alignItems="center">
+                <Text color={colors.textSecondary} fontSize={11} fontWeight="bold" letterSpacing={0.5}>
+                  SAVINGS RATE
+                </Text>
+                <Feather name="percent" size={14} color={colors.accentPrimary} />
+              </HStack>
+              <HStack alignItems="center" space="xs" mt={6}>
                 <Text color={colors.accentPrimary} fontSize={22} fontWeight="bold">
                   {report.savingsRatePercent}%
                 </Text>
                 <Badge
                   backgroundColor={colors.accentSubtle}
                   borderRadius={tokens.radius.sm}
-                  px={6}
-                  py={2}
+                  px={5}
+                  py={1}
                 >
                   <BadgeText color={colors.accentPrimary} fontSize={10} fontWeight="bold">
                     {report.savingsRatePercent >= 20 ? 'HEALTHY' : 'LOW'}
@@ -211,14 +218,22 @@ export const ReportsScreen: React.FC = () => {
             p={tokens.spacing.xl}
             alignItems="center"
           >
-            <Text color={colors.textMuted} fontSize={28} mb={8}>
-              📊
-            </Text>
+            <Box
+              width={50}
+              height={50}
+              borderRadius={tokens.radius.full}
+              backgroundColor={colors.surfaceSubtle}
+              alignItems="center"
+              justifyContent="center"
+              mb={10}
+            >
+              <Ionicons name="bar-chart-outline" size={26} color={colors.textSecondary} />
+            </Box>
             <Text color={colors.textPrimary} fontSize={16} fontWeight="bold">
               No Data for {monthLabel}
             </Text>
             <Text color={colors.textSecondary} fontSize={13} textAlign="center" mt={4}>
-              There are no recorded expenses or income for this month yet.
+              There are no recorded expenses or income transactions for this period.
             </Text>
           </Card>
         ) : (
@@ -249,8 +264,8 @@ export const ReportsScreen: React.FC = () => {
                       <Badge
                         backgroundColor={colors.surfaceSubtle}
                         borderRadius={tokens.radius.sm}
-                        px={4}
-                        py={1}
+                        px={5}
+                        py={2}
                       >
                         <BadgeText color={colors.textSecondary} fontSize={10} fontWeight="bold">
                           {item.percentage}%
@@ -278,7 +293,7 @@ export const ReportsScreen: React.FC = () => {
               ))}
             </VStack>
 
-            {/* Top Merchants */}
+            {/* Top Payees */}
             {report.topMerchants.length > 0 && (
               <VStack space="sm">
                 <Text color={colors.textPrimary} fontSize={12} fontWeight="bold" letterSpacing={0.8}>

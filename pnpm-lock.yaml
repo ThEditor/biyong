@@ -99,6 +99,9 @@ importers:
       '@expo/metro-runtime':
         specifier: ~4.0.1
         version: 4.0.1(react-native@0.76.7(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(@types/react@18.3.31)(react@18.3.1))
+      '@expo/vector-icons':
+        specifier: ^14.0.4
+        version: 14.0.4
       '@gluestack-ui/config':
         specifier: ^1.1.20
         version: 1.1.20(@gluestack-style/react@1.0.57)(@gluestack-ui/themed@1.1.73(69c611928f9d086dd27e77cc103a46ac))

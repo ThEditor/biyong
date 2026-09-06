@@ -18,6 +18,7 @@ import {
   VStack,
 } from '@gluestack-ui/themed';
 import { formatMoney } from '@biyong/domain';
+import { Feather } from '@expo/vector-icons';
 import { useAppTheme } from '../theme/ThemeContext';
 import { useLedger } from '../context/LedgerContext';
 
@@ -217,9 +218,7 @@ export const QuickAddModal: React.FC = () => {
               {editingTransaction ? 'Edit Transaction' : 'Record Transaction'}
             </Text>
             <TouchableOpacity onPress={closeAddModal} style={styles.closeBtn}>
-              <Text color={colors.textSecondary} fontSize={18} fontWeight="600">
-                ✕
-              </Text>
+              <Feather name="x" size={20} color={colors.textSecondary} />
             </TouchableOpacity>
           </HStack>
 
@@ -304,7 +303,7 @@ export const QuickAddModal: React.FC = () => {
                 />
               </Box>
               <Text color={colors.textMuted} fontSize={11} mt={2}>
-                Stores as: {previewMinor} paise ({formatMoney(previewMinor, 'INR')})
+                Amount: {formatMoney(previewMinor, 'INR')}
               </Text>
             </VStack>
 

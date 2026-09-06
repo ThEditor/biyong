@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { ScrollView, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
 import { filterTransactions, formatMoney } from '@biyong/domain';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import {
   Box,
   Text,
@@ -83,22 +84,18 @@ export const TransactionsScreen: React.FC = () => {
           px={12}
           height={42}
         >
-          <Text fontSize={14} mr={8}>
-            🔍
-          </Text>
+          <Feather name="search" size={16} color={colors.textMuted} style={{ marginRight: 8 }} />
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="Search merchant, notes, tags..."
+            placeholder="Search merchant, notes, subcategory..."
             placeholderTextColor={colors.textMuted}
             style={[styles.searchInput, { color: colors.textPrimary }]}
             clearButtonMode="while-editing"
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearSearchBtn}>
-              <Text color={colors.textMuted} fontSize={14} fontWeight="bold">
-                ✕
-              </Text>
+              <Feather name="x" size={16} color={colors.textMuted} />
             </TouchableOpacity>
           )}
         </Box>
@@ -231,25 +228,37 @@ export const TransactionsScreen: React.FC = () => {
             alignItems="center"
             mt={20}
           >
-            <Text fontSize={32} mb={8}>
-              🔍
-            </Text>
+            <Box
+              width={50}
+              height={50}
+              borderRadius={tokens.radius.full}
+              backgroundColor={colors.surfaceSubtle}
+              alignItems="center"
+              justifyContent="center"
+              mb={10}
+            >
+              <Ionicons name="receipt-outline" size={26} color={colors.textSecondary} />
+            </Box>
             <Text color={colors.textPrimary} fontSize={16} fontWeight="bold">
               No Transactions Found
             </Text>
             <Text color={colors.textSecondary} fontSize={13} textAlign="center" mt={4}>
-              No transactions match your active filters or search terms.
+              {transactions.length === 0
+                ? 'Your ledger is clean. Use the + button to log your first transaction.'
+                : 'No transactions match your active search or filter criteria.'}
             </Text>
-            <Button
-              onPress={resetFilters}
-              backgroundColor={colors.accentSubtle}
-              borderRadius={tokens.radius.sm}
-              mt={16}
-            >
-              <ButtonText color={colors.accentPrimary} fontSize={13} fontWeight="bold">
-                Reset All Filters
-              </ButtonText>
-            </Button>
+            {(searchQuery.length > 0 || selectedType !== 'all' || selectedCategoryId !== 'all') && (
+              <Button
+                onPress={resetFilters}
+                backgroundColor={colors.accentSubtle}
+                borderRadius={tokens.radius.sm}
+                mt={16}
+              >
+                <ButtonText color={colors.accentPrimary} fontSize={13} fontWeight="bold">
+                  Reset All Filters
+                </ButtonText>
+              </Button>
+            )}
           </Card>
         ) : (
           filteredTransactions.map((tx) => (

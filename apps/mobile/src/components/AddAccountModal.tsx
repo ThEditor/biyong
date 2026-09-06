@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import type { Account } from '@biyong/schemas';
 import { formatMoney } from '@biyong/domain';
+import { Feather } from '@expo/vector-icons';
 import { useAppTheme } from '../theme/ThemeContext';
 import { useLedger } from '../context/LedgerContext';
 
@@ -97,7 +98,7 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({ visible, onClo
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
             <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Add New Account</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <Text style={[styles.closeBtnText, { color: colors.textSecondary }]}>✕</Text>
+              <Feather name="x" size={20} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
@@ -191,7 +192,7 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({ visible, onClo
                 ]}
               />
               <Text style={[styles.minorPreview, { color: colors.textMuted }]}>
-                Stores as: {previewMinor} paise ({formatMoney(previewMinor, 'INR')})
+                Starting balance: {formatMoney(previewMinor, 'INR')}
               </Text>
             </View>
 

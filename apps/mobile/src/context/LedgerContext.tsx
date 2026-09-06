@@ -41,6 +41,15 @@ export interface LedgerContextValue {
   seedDemoData: () => Promise<void>;
   clearAllData: () => Promise<void>;
 
+  // Onboarding
+  hasCompletedOnboarding: boolean;
+  completeOnboarding: (firstAccount?: {
+    name: string;
+    type: Account['type'];
+    initialBalanceMinor: number;
+  }) => Promise<void>;
+  resetOnboarding: () => Promise<void>;
+
   // QuickAddModal orchestration
   isAddModalOpen: boolean;
   modalInitialType: 'expense' | 'income' | 'transfer';
@@ -65,6 +74,7 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     categoriesCount: 0,
     dbEngine: 'expo-sqlite v15.1 (offline-first)',
   });
+  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(true);
 
   // Modal state
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -127,6 +137,12 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           categoriesCount: catList.length,
           dbEngine: 'expo-sqlite v15.1 (offline-first)',
         });
+
+        // Check if onboarding is completed
+        await s.driver.exec('CREATE TABLE IF NOT EXISTS app_preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+        const pref = await s.driver.queryOne<{ value: string }>('SELECT value FROM app_preferences WHERE key = ?', ['onboarding_completed']);
+        setHasCompletedOnboarding(pref?.value === 'true');
+
         setIsReady(true);
       } catch (err) {
         console.error('Failed to bootstrap ledger:', err);
@@ -328,30 +344,44 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (!services) return;
     await services.driver.exec('DELETE FROM transactions');
     await services.driver.exec('DELETE FROM accounts');
-    // Re-seed default accounts
-    const now = new Date().toISOString();
-    await services.accountUseCases.createAccount({
-      id: 'acc-bank-primary',
-      name: 'Primary Bank Account',
-      type: 'bank',
-      initialBalanceMinor: 2500000,
-      currency: 'INR',
-      isArchived: false,
-      createdAt: now,
-      updatedAt: now,
-    });
-    await services.accountUseCases.createAccount({
-      id: 'acc-cash',
-      name: 'Cash in Hand',
-      type: 'cash',
-      initialBalanceMinor: 500000,
-      currency: 'INR',
-      isArchived: false,
-      createdAt: now,
-      updatedAt: now,
-    });
     await refreshLedger();
   }, [services, refreshLedger]);
+
+  const completeOnboarding = useCallback(
+    async (firstAccount?: {
+      name: string;
+      type: Account['type'];
+      initialBalanceMinor: number;
+    }) => {
+      if (!services) return;
+      if (firstAccount && firstAccount.name.trim().length > 0) {
+        const now = new Date().toISOString();
+        await services.accountUseCases.createAccount({
+          id: generateId('acc'),
+          name: firstAccount.name.trim(),
+          type: firstAccount.type,
+          initialBalanceMinor: firstAccount.initialBalanceMinor,
+          currency: 'INR',
+          isArchived: false,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+      await services.driver.run(
+        'INSERT OR REPLACE INTO app_preferences (key, value) VALUES (?, ?)',
+        ['onboarding_completed', 'true']
+      );
+      setHasCompletedOnboarding(true);
+      await refreshLedger();
+    },
+    [services, refreshLedger]
+  );
+
+  const resetOnboarding = useCallback(async () => {
+    if (!services) return;
+    await services.driver.run('DELETE FROM app_preferences WHERE key = ?', ['onboarding_completed']);
+    setHasCompletedOnboarding(false);
+  }, [services]);
 
   const openAddModal = useCallback((type: 'expense' | 'income' | 'transfer' = 'expense') => {
     setEditingTransaction(null);
@@ -387,6 +417,9 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       archiveAccount,
       seedDemoData,
       clearAllData,
+      hasCompletedOnboarding,
+      completeOnboarding,
+      resetOnboarding,
       isAddModalOpen,
       modalInitialType,
       editingTransaction,
@@ -410,6 +443,9 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       archiveAccount,
       seedDemoData,
       clearAllData,
+      hasCompletedOnboarding,
+      completeOnboarding,
+      resetOnboarding,
       isAddModalOpen,
       modalInitialType,
       editingTransaction,

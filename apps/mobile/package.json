@@ -19,6 +19,7 @@
     "@biyong/schemas": "workspace:*",
     "@biyong/ui": "workspace:*",
     "@expo/metro-runtime": "~4.0.1",
+    "@expo/vector-icons": "^14.0.4",
     "@gluestack-ui/config": "^1.1.20",
     "@gluestack-ui/themed": "^1.1.73",
     "expo": "~52.0.30",
