@@ -11,10 +11,15 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./memory": {
+      "types": "./dist/memory-driver.d.ts",
+      "import": "./dist/memory-driver.js",
+      "require": "./dist/memory-driver.cjs"
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --dts",
+    "build": "tsup src/index.ts src/memory-driver.ts --format esm,cjs --dts",
     "dev": "tsup src/index.ts --format esm,cjs --watch --dts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

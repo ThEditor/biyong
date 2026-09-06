@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
-  MemorySqliteDriver,
   runMigrations,
   SqliteAccountRepository,
   SqliteCategoryRepository,
@@ -8,6 +7,7 @@ import {
   SqliteGroupRepository,
   SqliteOutboxRepository,
 } from '../index.js';
+import { MemorySqliteDriver } from '../memory-driver.js';
 import type { Account, Category, Transaction, Group, GroupMember, GroupExpense } from '@biyong/schemas';
 
 describe('Local DB: SQLite Schema & Repositories', () => {

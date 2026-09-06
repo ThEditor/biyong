@@ -1,10 +1,10 @@
 import {
-  MemorySqliteDriver,
   runMigrations,
   SqliteAccountRepository,
   SqliteTransactionRepository,
   SqliteGroupRepository,
 } from '../packages/local-db/src/index.js';
+import { MemorySqliteDriver } from '../packages/local-db/src/memory-driver.js';
 import {
   TransactionUseCases,
   GroupUseCases,

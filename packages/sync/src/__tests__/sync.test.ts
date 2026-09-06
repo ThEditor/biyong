@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createSyncOperation, SyncEngine, type SyncServerClient } from '../index.js';
-import { MemorySqliteDriver, runMigrations, SqliteOutboxRepository } from '@biyong/local-db';
+import { runMigrations, SqliteOutboxRepository } from '@biyong/local-db';
+import { MemorySqliteDriver } from '@biyong/local-db/memory';
 
 describe('Sync: Operations & Engine', () => {
   it('creates valid atomic sync operation', () => {
