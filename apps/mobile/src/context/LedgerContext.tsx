@@ -182,8 +182,18 @@ export interface LedgerContextValue {
   splitTransactionIntoGroup: (
     transactionId: string,
     groupId: string,
-    splitMethod?: 'equal' | 'exact' | 'percentage' | 'shares'
+    splitMethod?: 'equal' | 'exact' | 'percentage' | 'shares',
+    allocations?: {
+      memberId: string;
+      amountMinor?: number;
+      percentage?: number;
+      shares?: number;
+    }[],
+    payerMemberId?: string
   ) => Promise<GroupExpense>;
+  isTransactionSplitInGroup: (transactionId: string, groupId: string) => Promise<boolean>;
+  getSplitGroupIdsForTransaction: (transactionId: string) => Promise<string[]>;
+  getGroupMembers: (groupId: string) => Promise<GroupMember[]>;
   selectGroup: (id: string | null) => Promise<void>;
   addGroupExpense: (
     expenseData: Omit<GroupExpense, 'id' | 'createdAt' | 'updatedAt' | 'createdByUserId'> & {
@@ -1367,29 +1377,118 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     [services, token, user]
   );
 
+  const isTransactionSplitInGroup = useCallback(
+    async (transactionId: string, groupId: string): Promise<boolean> => {
+      if (!services) return false;
+      try {
+        // 1. Check SQLite app_preferences
+        const prefKey = `tx_split_${transactionId}_${groupId}`;
+        const prefRows = await services.driver.query<{ value: string }>(
+          'SELECT value FROM app_preferences WHERE key = ?',
+          [prefKey]
+        );
+        if (prefRows.length > 0 && prefRows[0].value) {
+          return true;
+        }
+
+        // 2. Check group expenses notes
+        const expenses = await services.groupRepo.getExpenses(groupId);
+        const marker = `Linked from transaction ${transactionId}`;
+        return expenses.some((e) => e.notes && e.notes.includes(marker));
+      } catch (err) {
+        console.warn('Failed to check if transaction split in group:', err);
+        return false;
+      }
+    },
+    [services]
+  );
+
+  const getSplitGroupIdsForTransaction = useCallback(
+    async (transactionId: string): Promise<string[]> => {
+      if (!services) return [];
+      try {
+        const marker = `Linked from transaction ${transactionId}`;
+        const matchingGroupIds: string[] = [];
+
+        // Check app_preferences table
+        const prefRows = await services.driver.query<{ key: string }>(
+          "SELECT key FROM app_preferences WHERE key LIKE ?",
+          [`tx_split_${transactionId}_%`]
+        );
+        for (const row of prefRows) {
+          const prefix = `tx_split_${transactionId}_`;
+          if (row.key.startsWith(prefix)) {
+            const grpId = row.key.slice(prefix.length);
+            if (grpId && !matchingGroupIds.includes(grpId)) {
+              matchingGroupIds.push(grpId);
+            }
+          }
+        }
+
+        // Check all groups for expense notes marker
+        const allGroups = await services.groupRepo.findAll();
+        for (const grp of allGroups) {
+          if (!matchingGroupIds.includes(grp.id)) {
+            const exps = await services.groupRepo.getExpenses(grp.id);
+            if (exps.some((e) => e.notes && e.notes.includes(marker))) {
+              matchingGroupIds.push(grp.id);
+            }
+          }
+        }
+        return matchingGroupIds;
+      } catch (err) {
+        console.warn('Failed to get split group IDs for transaction:', err);
+        return [];
+      }
+    },
+    [services]
+  );
+
   const splitTransactionIntoGroup = useCallback(
     async (
       transactionId: string,
       groupId: string,
-      splitMethod: 'equal' | 'exact' | 'percentage' | 'shares' = 'equal'
+      splitMethod: 'equal' | 'exact' | 'percentage' | 'shares' = 'equal',
+      customAllocations?: {
+        memberId: string;
+        amountMinor?: number;
+        percentage?: number;
+        shares?: number;
+      }[],
+      customPayerMemberId?: string
     ): Promise<GroupExpense> => {
       if (!services) throw new Error('Database not ready');
       const tx = await services.txRepo.findById(transactionId);
       if (!tx) throw new Error('Transaction not found');
 
+      // Check if already split into this group
+      const alreadySplit = await isTransactionSplitInGroup(transactionId, groupId);
+      if (alreadySplit) {
+        throw new Error('This transaction has already been split into this group.');
+      }
+
       const members = await services.groupRepo.getMembers(groupId);
       if (members.length === 0) throw new Error('Selected group has no members');
 
-      // Auto-select payer as current user / "You" / owner
-      const myMember =
-        members.find(
-          (m) =>
-            (user && m.userId === user.id) ||
-            m.name.toLowerCase() === 'you' ||
-            m.role === 'owner'
-        ) || members[0];
+      // Payer selection: prioritize specified custom payer, or current user / "You" / owner
+      let payerMemberId = customPayerMemberId;
+      if (!payerMemberId || !members.some((m) => m.id === payerMemberId)) {
+        const myMember =
+          members.find(
+            (m) =>
+              (user && m.userId === user.id) ||
+              m.name.toLowerCase() === 'you' ||
+              m.role === 'owner'
+          ) || members[0];
+        payerMemberId = myMember.id;
+      }
 
-      const allocations = members.map((m) => ({ memberId: m.id }));
+      // Allocations selection
+      let allocations = customAllocations;
+      if (!allocations || allocations.length === 0) {
+        allocations = members.map((m) => ({ memberId: m.id }));
+      }
+
       const now = new Date().toISOString();
       const expenseTitle = tx.merchant || tx.notes || `Split: ${tx.date}`;
 
@@ -1400,9 +1499,9 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         amountMinor: tx.amountMinor,
         currency: tx.currency as any,
         date: tx.date,
-        createdByMemberId: myMember.id,
+        createdByMemberId: payerMemberId,
         createdByUserId: user?.id ?? null,
-        payers: [{ memberId: myMember.id, amountMinor: tx.amountMinor }],
+        payers: [{ memberId: payerMemberId, amountMinor: tx.amountMinor }],
         splitMethod,
         allocations,
         notes: `Linked from transaction ${tx.id}${tx.merchant ? ` (${tx.merchant})` : ''}`,
@@ -1411,6 +1510,16 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       };
 
       await services.groupUseCases.addExpense(newExpense);
+
+      // Record split mapping in app_preferences so duplicate splits are blocked
+      try {
+        await services.driver.run(
+          'INSERT OR REPLACE INTO app_preferences (key, value) VALUES (?, ?)',
+          [`tx_split_${transactionId}_${groupId}`, newExpense.id]
+        );
+      } catch (prefErr) {
+        console.warn('Failed to save tx_split preference:', prefErr);
+      }
 
       // Enqueue sync operation
       const op = createSyncOperation({
@@ -1430,7 +1539,20 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       return newExpense;
     },
-    [services, user, refreshLedger, refreshActiveGroup]
+    [services, user, refreshLedger, refreshActiveGroup, isTransactionSplitInGroup]
+  );
+
+  const getGroupMembers = useCallback(
+    async (groupId: string): Promise<GroupMember[]> => {
+      if (!services) return [];
+      try {
+        return await services.groupRepo.getMembers(groupId);
+      } catch (err) {
+        console.warn('Failed to get group members:', err);
+        return [];
+      }
+    },
+    [services]
   );
 
   const addGroupExpense = useCallback(
@@ -1858,6 +1980,9 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setApiUrl,
       testApiConnection,
       splitTransactionIntoGroup,
+      isTransactionSplitInGroup,
+      getSplitGroupIdsForTransaction,
+      getGroupMembers,
     }),
     [
       isReady,
@@ -1929,6 +2054,9 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setApiUrl,
       testApiConnection,
       splitTransactionIntoGroup,
+      isTransactionSplitInGroup,
+      getSplitGroupIdsForTransaction,
+      getGroupMembers,
     ]
   );
 

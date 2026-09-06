@@ -546,33 +546,58 @@ export const QuickAddModal: React.FC = () => {
             </VStack>
 
             {/* Submit Button */}
-            <Button
+            <TouchableOpacity
               onPress={handleSubmit}
               disabled={isSubmitting}
-              backgroundColor={colors.accentPrimary}
-              borderRadius={tokens.radius.md}
-              py={14}
-              mt={8}
-              opacity={isSubmitting ? 0.6 : 1}
+              activeOpacity={0.8}
+              style={{
+                backgroundColor: colors.accentPrimary,
+                borderRadius: tokens.radius.md,
+                paddingVertical: 14,
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginTop: 12,
+                opacity: isSubmitting ? 0.6 : 1,
+              }}
             >
-              <ButtonText color={colors.accentForeground} fontSize={15} fontWeight="bold" letterSpacing={0.5}>
+              <Text
+                style={{
+                  color: colors.accentForeground,
+                  fontSize: 15,
+                  fontWeight: '700',
+                  letterSpacing: 0.5,
+                  textAlign: 'center',
+                }}
+              >
                 {editingTransaction ? 'Save Changes' : 'Record Transaction'}
-              </ButtonText>
-            </Button>
+              </Text>
+            </TouchableOpacity>
 
             {editingTransaction && (
-              <Button
+              <TouchableOpacity
                 onPress={handleDelete}
-                variant="outline"
-                borderColor={colors.danger}
-                borderRadius={tokens.radius.md}
-                py={12}
-                mt={4}
+                activeOpacity={0.8}
+                style={{
+                  borderWidth: 1,
+                  borderColor: colors.danger,
+                  borderRadius: tokens.radius.md,
+                  paddingVertical: 12,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginTop: 8,
+                }}
               >
-                <ButtonText color={colors.danger} fontSize={14} fontWeight="600">
+                <Text
+                  style={{
+                    color: colors.danger,
+                    fontSize: 14,
+                    fontWeight: '600',
+                    textAlign: 'center',
+                  }}
+                >
                   Delete Transaction
-                </ButtonText>
-              </Button>
+                </Text>
+              </TouchableOpacity>
             )}
           </ScrollView>
         </Box>

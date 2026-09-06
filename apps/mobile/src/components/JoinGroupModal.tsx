@@ -364,22 +364,26 @@ const styles = StyleSheet.create({
     flex: 1,
     borderWidth: 1,
     paddingVertical: 14,
+    minHeight: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
   cancelButtonText: {
     fontSize: 14,
     fontWeight: '600',
+    textAlign: 'center',
   },
   submitButton: {
     flex: 2,
     flexDirection: 'row',
     paddingVertical: 14,
+    minHeight: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
   submitButtonText: {
     fontSize: 14,
     fontWeight: '700',
+    textAlign: 'center',
   },
 });

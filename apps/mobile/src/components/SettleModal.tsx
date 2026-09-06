@@ -366,11 +366,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 14,
+    minHeight: 48,
     marginTop: 8,
   },
   submitButtonText: {
     fontSize: 15,
     fontWeight: '700',
     letterSpacing: 0.5,
+    textAlign: 'center',
   },
 });

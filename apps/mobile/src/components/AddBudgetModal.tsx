@@ -285,19 +285,32 @@ export const AddBudgetModal: React.FC<AddBudgetModalProps> = ({ visible, onClose
             </TouchableOpacity>
 
             {/* Submit Button */}
-            <Button
+            <TouchableOpacity
               onPress={handleSubmit}
               disabled={isSubmitting}
-              backgroundColor={colors.accentPrimary}
-              borderRadius={tokens.radius.md}
-              py={14}
-              mt={8}
-              opacity={isSubmitting ? 0.6 : 1}
+              activeOpacity={0.8}
+              style={{
+                backgroundColor: colors.accentPrimary,
+                borderRadius: tokens.radius.md,
+                paddingVertical: 14,
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginTop: 12,
+                opacity: isSubmitting ? 0.6 : 1,
+              }}
             >
-              <ButtonText color={colors.accentForeground} fontSize={15} fontWeight="bold" letterSpacing={0.5}>
+              <Text
+                style={{
+                  color: colors.accentForeground,
+                  fontSize: 15,
+                  fontWeight: '700',
+                  letterSpacing: 0.5,
+                  textAlign: 'center',
+                }}
+              >
                 Set Budget
-              </ButtonText>
-            </Button>
+              </Text>
+            </TouchableOpacity>
           </ScrollView>
         </Box>
       </KeyboardAvoidingView>
