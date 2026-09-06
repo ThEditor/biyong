@@ -1381,20 +1381,35 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     async (transactionId: string, groupId: string): Promise<boolean> => {
       if (!services) return false;
       try {
-        // 1. Check SQLite app_preferences
+        const marker = `Linked from transaction ${transactionId}`;
+        const expenses = await services.groupRepo.getExpenses(groupId);
         const prefKey = `tx_split_${transactionId}_${groupId}`;
+
+        // Check if there is an active expense in this group matching this transaction
         const prefRows = await services.driver.query<{ value: string }>(
           'SELECT value FROM app_preferences WHERE key = ?',
           [prefKey]
         );
-        if (prefRows.length > 0 && prefRows[0].value) {
+
+        const linkedExpenseId = prefRows.length > 0 ? prefRows[0].value : null;
+        const matchingExpense = expenses.find(
+          (e) => (linkedExpenseId && e.id === linkedExpenseId) || (e.notes && e.notes.includes(marker))
+        );
+
+        if (matchingExpense) {
           return true;
         }
 
-        // 2. Check group expenses notes
-        const expenses = await services.groupRepo.getExpenses(groupId);
-        const marker = `Linked from transaction ${transactionId}`;
-        return expenses.some((e) => e.notes && e.notes.includes(marker));
+        // If no active expense was found but preference existed, clean up stale preference
+        if (prefRows.length > 0) {
+          try {
+            await services.driver.run('DELETE FROM app_preferences WHERE key = ?', [prefKey]);
+          } catch {
+            // ignore
+          }
+        }
+
+        return false;
       } catch (err) {
         console.warn('Failed to check if transaction split in group:', err);
         return false;
@@ -1411,16 +1426,31 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         const matchingGroupIds: string[] = [];
 
         // Check app_preferences table
-        const prefRows = await services.driver.query<{ key: string }>(
-          "SELECT key FROM app_preferences WHERE key LIKE ?",
+        const prefRows = await services.driver.query<{ key: string; value: string }>(
+          "SELECT key, value FROM app_preferences WHERE key LIKE ?",
           [`tx_split_${transactionId}_%`]
         );
         for (const row of prefRows) {
           const prefix = `tx_split_${transactionId}_`;
           if (row.key.startsWith(prefix)) {
             const grpId = row.key.slice(prefix.length);
-            if (grpId && !matchingGroupIds.includes(grpId)) {
-              matchingGroupIds.push(grpId);
+            if (grpId) {
+              const exps = await services.groupRepo.getExpenses(grpId);
+              const exists = exps.some(
+                (e) => e.id === row.value || (e.notes && e.notes.includes(marker))
+              );
+              if (exists) {
+                if (!matchingGroupIds.includes(grpId)) {
+                  matchingGroupIds.push(grpId);
+                }
+              } else {
+                // Obsolete / deleted: clean up
+                try {
+                  await services.driver.run('DELETE FROM app_preferences WHERE key = ?', [row.key]);
+                } catch {
+                  // ignore
+                }
+              }
             }
           }
         }
@@ -1615,6 +1645,13 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     async (id: string) => {
       if (!services) throw new Error('Database not ready');
       await services.groupUseCases.deleteExpense(id);
+
+      // Clean up any tx_split preferences pointing to this deleted expense
+      try {
+        await services.driver.run('DELETE FROM app_preferences WHERE value = ?', [id]);
+      } catch (prefErr) {
+        console.warn('Failed to delete tx_split preference:', prefErr);
+      }
       const op = createSyncOperation({
         entityType: 'group_expense',
         entityId: id,
