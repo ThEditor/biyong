@@ -19,7 +19,11 @@ import { ExplanationModal } from '../components/ExplanationModal';
 
 type GroupDetailTab = 'expenses' | 'balances' | 'graph';
 
-export const GroupsScreen: React.FC = () => {
+export interface GroupsScreenProps {
+  onBack?: () => void;
+}
+
+export const GroupsScreen: React.FC<GroupsScreenProps> = ({ onBack }) => {
   const { colors, tokens } = useAppTheme();
   const {
     groups,
@@ -126,11 +130,18 @@ export const GroupsScreen: React.FC = () => {
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         {/* Top Header */}
         <View style={[styles.screenHeader, { borderBottomColor: colors.border }]}>
-          <View>
-            <Text style={[styles.screenTitle, { color: colors.textPrimary }]}>Groups & Splits</Text>
-            <Text style={[styles.screenSubtitle, { color: colors.textSecondary }]}>
-              Offline multi-payer expenses and settlements
-            </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            {onBack && (
+              <TouchableOpacity onPress={onBack} style={{ marginRight: 8 }}>
+                <Feather name="chevron-left" size={24} color={colors.accentPrimary} />
+              </TouchableOpacity>
+            )}
+            <View>
+              <Text style={[styles.screenTitle, { color: colors.textPrimary }]}>Groups & Splits</Text>
+              <Text style={[styles.screenSubtitle, { color: colors.textSecondary }]}>
+                Offline multi-payer expenses & settlements
+              </Text>
+            </View>
           </View>
           <TouchableOpacity
             onPress={() => setIsAddGroupOpen(true)}

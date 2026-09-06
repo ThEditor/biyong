@@ -24,16 +24,23 @@ import { QuickAddModal } from './src/components/QuickAddModal';
 import { OnboardingModal } from './src/components/OnboardingModal';
 import { AuthModal } from './src/components/AuthModal';
 
-type TabType = 'home' | 'accounts' | 'transactions' | 'groups' | 'budgets' | 'reports' | 'settings';
+type ScreenType =
+  | 'home'
+  | 'accounts'
+  | 'transactions'
+  | 'groups'
+  | 'budgets'
+  | 'reports'
+  | 'settings';
 
-interface TabItem {
-  id: TabType;
+interface BottomTabItem {
+  id: ScreenType;
   label: string;
   activeIcon: keyof typeof Ionicons.glyphMap;
   inactiveIcon: keyof typeof Ionicons.glyphMap;
 }
 
-const TABS: TabItem[] = [
+const LEFT_TABS: BottomTabItem[] = [
   {
     id: 'home',
     label: 'Home',
@@ -41,34 +48,19 @@ const TABS: TabItem[] = [
     inactiveIcon: 'home-outline',
   },
   {
-    id: 'accounts',
-    label: 'Accounts',
-    activeIcon: 'wallet',
-    inactiveIcon: 'wallet-outline',
-  },
-  {
-    id: 'transactions',
-    label: 'Activity',
-    activeIcon: 'swap-horizontal',
-    inactiveIcon: 'swap-horizontal-outline',
-  },
-  {
-    id: 'groups',
-    label: 'Groups',
-    activeIcon: 'people',
-    inactiveIcon: 'people-outline',
-  },
-  {
-    id: 'budgets',
-    label: 'Budgets',
-    activeIcon: 'pie-chart',
-    inactiveIcon: 'pie-chart-outline',
-  },
-  {
     id: 'reports',
-    label: 'Reports',
+    label: 'Report',
     activeIcon: 'bar-chart',
     inactiveIcon: 'bar-chart-outline',
+  },
+];
+
+const RIGHT_TABS: BottomTabItem[] = [
+  {
+    id: 'budgets',
+    label: 'Plan',
+    activeIcon: 'wallet',
+    inactiveIcon: 'wallet-outline',
   },
   {
     id: 'settings',
@@ -80,8 +72,8 @@ const TABS: TabItem[] = [
 
 function MainNavigator() {
   const { colors, tokens, resolvedMode } = useAppTheme();
-  const { isReady, hasCompletedOnboarding } = useLedger();
-  const [activeTab, setActiveTab] = useState<TabType>('home');
+  const { isReady, hasCompletedOnboarding, openAddModal } = useLedger();
+  const [activeScreen, setActiveScreen] = useState<ScreenType>('home');
   const insets = useSafeAreaInsets();
 
   // Top inset accounts for Android status bar and iOS notch / Dynamic Island
@@ -103,20 +95,23 @@ function MainNavigator() {
   }
 
   const renderScreen = () => {
-    switch (activeTab) {
+    switch (activeScreen) {
       case 'home':
         return (
           <HomeScreen
-            onNavigateToAccounts={() => setActiveTab('accounts')}
-            onNavigateToTransactions={() => setActiveTab('transactions')}
+            onNavigateToAccounts={() => setActiveScreen('accounts')}
+            onNavigateToTransactions={() => setActiveScreen('transactions')}
+            onNavigateToGroups={() => setActiveScreen('groups')}
+            onNavigateToReports={() => setActiveScreen('reports')}
+            onNavigateToPlan={() => setActiveScreen('budgets')}
           />
         );
       case 'accounts':
-        return <AccountsScreen />;
+        return <AccountsScreen onBack={() => setActiveScreen('home')} />;
       case 'transactions':
-        return <TransactionsScreen />;
+        return <TransactionsScreen onBack={() => setActiveScreen('home')} />;
       case 'groups':
-        return <GroupsScreen />;
+        return <GroupsScreen onBack={() => setActiveScreen('home')} />;
       case 'budgets':
         return <BudgetsGoalsScreen />;
       case 'reports':
@@ -125,6 +120,12 @@ function MainNavigator() {
         return <SettingsScreen />;
     }
   };
+
+  const isHomeGroupActive =
+    activeScreen === 'home' ||
+    activeScreen === 'accounts' ||
+    activeScreen === 'transactions' ||
+    activeScreen === 'groups';
 
   return (
     <View
@@ -141,22 +142,23 @@ function MainNavigator() {
       {/* Screen Content */}
       <View style={styles.screenContainer}>{renderScreen()}</View>
 
-      {/* Bottom Tab Bar with Inset Protection */}
+      {/* Persistent Bottom Bar with Elevated Center FAB */}
       <Box
         backgroundColor={colors.surface}
         borderTopWidth={1}
         borderTopColor={colors.border}
-        px={2}
-        pt={6}
+        px={6}
+        pt={4}
         pb={bottomInset}
       >
         <HStack justifyContent="space-around" alignItems="center">
-          {TABS.map((tab) => {
-            const isActive = activeTab === tab.id;
+          {/* Left Tabs (Home, Report) */}
+          {LEFT_TABS.map((tab) => {
+            const isActive = tab.id === 'home' ? isHomeGroupActive : activeScreen === tab.id;
             return (
               <TouchableOpacity
                 key={tab.id}
-                onPress={() => setActiveTab(tab.id)}
+                onPress={() => setActiveScreen(tab.id)}
                 activeOpacity={0.7}
                 style={[
                   styles.tabButton,
@@ -175,7 +177,51 @@ function MainNavigator() {
                   color={isActive ? colors.accentPrimary : colors.textSecondary}
                   fontSize={10}
                   fontWeight={isActive ? '700' : '500'}
-                  mt={3}
+                  mt={2}
+                >
+                  {tab.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+
+          {/* Elevated Center Floating Action Button (FAB) */}
+          <View style={styles.fabContainer}>
+            <TouchableOpacity
+              onPress={() => openAddModal()}
+              activeOpacity={0.85}
+              style={[styles.centerFab, { backgroundColor: '#7C3AED' }]}
+            >
+              <Ionicons name="add" size={28} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Right Tabs (Plan, Settings) */}
+          {RIGHT_TABS.map((tab) => {
+            const isActive = activeScreen === tab.id;
+            return (
+              <TouchableOpacity
+                key={tab.id}
+                onPress={() => setActiveScreen(tab.id)}
+                activeOpacity={0.7}
+                style={[
+                  styles.tabButton,
+                  isActive && {
+                    backgroundColor: colors.accentSubtle,
+                    borderRadius: tokens.radius.md,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={isActive ? tab.activeIcon : tab.inactiveIcon}
+                  size={20}
+                  color={isActive ? colors.accentPrimary : colors.textSecondary}
+                />
+                <Text
+                  color={isActive ? colors.accentPrimary : colors.textSecondary}
+                  fontSize={10}
+                  fontWeight={isActive ? '700' : '500'}
+                  mt={2}
                 >
                   {tab.label}
                 </Text>
@@ -185,7 +231,7 @@ function MainNavigator() {
         </HStack>
       </Box>
 
-      {/* Quick Add Modal */}
+      {/* Global Quick Add Modal */}
       <QuickAddModal />
 
       {/* Authentication & Cloud Sync Modal */}
@@ -200,7 +246,7 @@ function MainNavigator() {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <MobileThemeProvider initialMode="dark" initialAccent="default">
+      <MobileThemeProvider initialMode="dark" initialAccent="violet">
         <LedgerProvider>
           <MainNavigator />
         </LedgerProvider>
@@ -225,7 +271,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 6,
-    paddingHorizontal: 6,
-    minWidth: 48,
+    paddingHorizontal: 12,
+    minWidth: 54,
+  },
+  fabContainer: {
+    position: 'relative',
+    top: -12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  centerFab: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 6,
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
   },
 });

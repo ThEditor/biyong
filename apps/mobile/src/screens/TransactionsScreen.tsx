@@ -17,9 +17,13 @@ import { useAppTheme } from '../theme/ThemeContext';
 import { useLedger } from '../context/LedgerContext';
 import { TransactionItem } from '../components/TransactionItem';
 
-export const TransactionsScreen: React.FC = () => {
+export interface TransactionsScreenProps {
+  onBack?: () => void;
+}
+
+export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({ onBack }) => {
   const { colors, tokens } = useAppTheme();
-  const { transactions, accounts, categories, openEditModal } = useLedger();
+  const { transactions, accounts, categories, openEditModal, openAddModal } = useLedger();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState<'all' | 'expense' | 'income' | 'transfer'>('all');
@@ -66,6 +70,51 @@ export const TransactionsScreen: React.FC = () => {
 
   return (
     <Box flex={1} backgroundColor={colors.background}>
+      {/* Top Header Bar */}
+      <HStack
+        alignItems="center"
+        justifyContent="space-between"
+        px={16}
+        py={12}
+        backgroundColor={colors.surface}
+        borderBottomWidth={1}
+        borderBottomColor={colors.border}
+      >
+        <HStack alignItems="center" space="xs">
+          {onBack && (
+            <TouchableOpacity onPress={onBack} style={{ marginRight: 6 }}>
+              <Feather name="chevron-left" size={24} color={colors.accentPrimary} />
+            </TouchableOpacity>
+          )}
+          <VStack>
+            <Text color={colors.textPrimary} fontSize={18} fontWeight="800">
+              Transactions
+            </Text>
+            <Text color={colors.textSecondary} fontSize={11}>
+              Ledger & History
+            </Text>
+          </VStack>
+        </HStack>
+
+        <TouchableOpacity
+          onPress={() => openAddModal()}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: colors.accentPrimary,
+            paddingHorizontal: 12,
+            paddingVertical: 6,
+            borderRadius: tokens.radius.sm,
+            gap: 4,
+          }}
+        >
+          <Feather name="plus" size={14} color={colors.accentForeground} />
+          <Text color={colors.accentForeground} fontSize={12} fontWeight="bold">
+            Add
+          </Text>
+        </TouchableOpacity>
+      </HStack>
+
       <Box
         p={12}
         gap={10}

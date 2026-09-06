@@ -18,7 +18,11 @@ import { useLedger } from '../context/LedgerContext';
 import { AddAccountModal } from '../components/AddAccountModal';
 import type { AccountWithDerivedBalance } from '@biyong/application';
 
-export const AccountsScreen: React.FC = () => {
+export interface AccountsScreenProps {
+  onBack?: () => void;
+}
+
+export const AccountsScreen: React.FC<AccountsScreenProps> = ({ onBack }) => {
   const { colors, tokens } = useAppTheme();
   const { accounts, archiveAccount } = useLedger();
 
@@ -75,6 +79,51 @@ export const AccountsScreen: React.FC = () => {
 
   return (
     <Box flex={1} backgroundColor={colors.background}>
+      {/* Top Header Bar */}
+      <HStack
+        alignItems="center"
+        justifyContent="space-between"
+        px={16}
+        py={12}
+        backgroundColor={colors.surface}
+        borderBottomWidth={1}
+        borderBottomColor={colors.border}
+      >
+        <HStack alignItems="center" space="xs">
+          {onBack && (
+            <TouchableOpacity onPress={onBack} style={{ marginRight: 6 }}>
+              <Feather name="chevron-left" size={24} color={colors.accentPrimary} />
+            </TouchableOpacity>
+          )}
+          <VStack>
+            <Text color={colors.textPrimary} fontSize={18} fontWeight="800">
+              Accounts
+            </Text>
+            <Text color={colors.textSecondary} fontSize={11}>
+              Manage your money
+            </Text>
+          </VStack>
+        </HStack>
+
+        <TouchableOpacity
+          onPress={() => setShowAddModal(true)}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: colors.accentPrimary,
+            paddingHorizontal: 12,
+            paddingVertical: 6,
+            borderRadius: tokens.radius.sm,
+            gap: 4,
+          }}
+        >
+          <Feather name="plus" size={14} color={colors.accentForeground} />
+          <Text color={colors.accentForeground} fontSize={12} fontWeight="bold">
+            Add
+          </Text>
+        </TouchableOpacity>
+      </HStack>
+
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Header Summary */}
         <Card
