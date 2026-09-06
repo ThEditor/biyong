@@ -6,3 +6,4 @@ export * from './use-cases/groups.js';
 export * from './use-cases/budgets.js';
 export * from './use-cases/goals.js';
 export * from './use-cases/wealth.js';
+export * from './use-cases/analytics.js';

@@ -12,7 +12,13 @@ import {
   explainMemberSettlement,
   buildDependencyGraph,
   calculateBudgetStatus,
+  calculateBudgetPeriod,
+  calculateRollover,
   calculateGoalProgress,
+  calculateRequiredMonthlySavings,
+  projectCompletionDate,
+  classifySpending,
+  calculateSpendingTrends,
   calculateNetWorth,
   generateMonthlyReport,
   filterTransactions,
@@ -677,3 +683,348 @@ describe('Domain: Transaction Filters', () => {
     expect(all).toHaveLength(4);
   });
 });
+
+describe('Domain: Phase 2 - Budget Periods, Rollovers & Status Enhancements', () => {
+  const baseMonthlyBudget: Budget = {
+    id: 'budget-1',
+    categoryId: 'cat-groceries',
+    amountMinor: 3000000, // ₹30,000
+    currency: 'INR',
+    period: 'monthly',
+    startDate: '2026-09-01',
+    endDate: null,
+    rollover: true,
+    createdAt: '2026-09-01T00:00:00.000Z',
+    updatedAt: '2026-09-01T00:00:00.000Z',
+  };
+
+  const baseWeeklyBudget: Budget = {
+    id: 'budget-2',
+    categoryId: 'cat-groceries',
+    amountMinor: 700000, // ₹7,000
+    currency: 'INR',
+    period: 'weekly',
+    startDate: '2026-08-31',
+    endDate: null,
+    rollover: false,
+    createdAt: '2026-08-31T00:00:00.000Z',
+    updatedAt: '2026-08-31T00:00:00.000Z',
+  };
+
+  it('calculates monthly budget period properly', () => {
+    // September 2026 has 30 days
+    const period = calculateBudgetPeriod(baseMonthlyBudget, new Date(2026, 8, 10)); // Sept 10
+    expect(period.startDate).toBe('2026-09-01');
+    expect(period.endDate).toBe('2026-09-30');
+    expect(period.daysRemaining).toBe(20); // 30 - 10 = 20
+
+    // On the last day of month, minimum is 1
+    const endOfMonthPeriod = calculateBudgetPeriod(baseMonthlyBudget, new Date(2026, 8, 30));
+    expect(endOfMonthPeriod.daysRemaining).toBe(1);
+  });
+
+  it('calculates weekly budget period properly from Monday to Sunday', () => {
+    // 2026-09-02 is Wednesday. Monday is 2026-08-31, Sunday is 2026-09-06.
+    const wednesday = new Date(2026, 8, 2);
+    const periodWed = calculateBudgetPeriod(baseWeeklyBudget, wednesday);
+    expect(periodWed.startDate).toBe('2026-08-31');
+    expect(periodWed.endDate).toBe('2026-09-06');
+    expect(periodWed.daysRemaining).toBe(4);
+
+    // 2026-09-06 is Sunday (dayOfWeek 0). Monday is 2026-08-31, Sunday is 2026-09-06.
+    const sunday = new Date(2026, 8, 6);
+    const periodSun = calculateBudgetPeriod(baseWeeklyBudget, sunday);
+    expect(periodSun.startDate).toBe('2026-08-31');
+    expect(periodSun.endDate).toBe('2026-09-06');
+    expect(periodSun.daysRemaining).toBe(1); // Minimum 1
+
+    // 2026-08-31 is Monday.
+    const monday = new Date(2026, 8, 31); // In 2026, Aug 31 is (year: 2026, month: 7, date: 31)
+    const periodMon = calculateBudgetPeriod(baseWeeklyBudget, new Date(2026, 7, 31));
+    expect(periodMon.startDate).toBe('2026-08-31');
+    expect(periodMon.endDate).toBe('2026-09-06');
+    expect(periodMon.daysRemaining).toBe(6);
+  });
+
+  it('calculates rollover correctly based on budget rollover flag', () => {
+    const rolloverBudget: Budget = { ...baseMonthlyBudget, amountMinor: 1000000, rollover: true };
+    // Surplus: spent 8000, budget 10000 -> +2000
+    expect(calculateRollover(rolloverBudget, 800000)).toBe(200000);
+    // Deficit: spent 12000, budget 10000 -> -2000
+    expect(calculateRollover(rolloverBudget, 1200000)).toBe(-200000);
+
+    // If rollover is false, always 0
+    const noRolloverBudget: Budget = { ...baseMonthlyBudget, amountMinor: 1000000, rollover: false };
+    expect(calculateRollover(noRolloverBudget, 800000)).toBe(0);
+    expect(calculateRollover(noRolloverBudget, 1200000)).toBe(0);
+  });
+
+  it('calculates health status and daily allowance accurately', () => {
+    const budget: Budget = { ...baseMonthlyBudget, amountMinor: 3000000, rollover: true };
+    const refDate = new Date(2026, 8, 10); // Sept 10 -> 20 days remaining in Sept
+
+    // 1. Healthy: spent 1,500,000 (50% < 80%)
+    const healthy = calculateBudgetStatus(budget, 1500000, 0, refDate);
+    expect(healthy.health).toBe('healthy');
+    expect(healthy.percentageUsed).toBe(50);
+    expect(healthy.remainingMinor).toBe(1500000);
+    expect(healthy.dailyAllowanceMinor).toBe(Math.floor(1500000 / 20)); // 75,000 paise/day
+    expect(healthy.periodStart).toBe('2026-09-01');
+    expect(healthy.periodEnd).toBe('2026-09-30');
+    expect(healthy.daysRemaining).toBe(20);
+
+    // 2. Warning: spent 2,700,000 (90% >= 80% and < 100%)
+    const warning = calculateBudgetStatus(budget, 2700000, 0, refDate);
+    expect(warning.health).toBe('warning');
+    expect(warning.percentageUsed).toBe(90);
+    expect(warning.remainingMinor).toBe(300000);
+    expect(warning.dailyAllowanceMinor).toBe(Math.floor(300000 / 20)); // 15,000 paise/day
+
+    // 3. Exceeded: spent 3,300,000 (110% >= 100%)
+    const exceeded = calculateBudgetStatus(budget, 3300000, 0, refDate);
+    expect(exceeded.health).toBe('exceeded');
+    expect(exceeded.isOverBudget).toBe(true);
+    expect(exceeded.percentageUsed).toBe(110);
+    expect(exceeded.remainingMinor).toBe(-300000);
+    expect(exceeded.dailyAllowanceMinor).toBe(0); // Clamped to 0
+
+    // 4. With positive rollover
+    const withRollover = calculateBudgetStatus(budget, 2000000, 500000, refDate);
+    expect(withRollover.effectiveBudgetMinor).toBe(3500000);
+    expect(withRollover.remainingMinor).toBe(1500000);
+    expect(withRollover.percentageUsed).toBe(Math.round((2000000 / 3500000) * 100)); // 57%
+    expect(withRollover.health).toBe('healthy');
+  });
+});
+
+describe('Domain: Phase 2 - Goals Enhancements', () => {
+  const sampleGoal: Goal = {
+    id: 'goal-vacation',
+    title: 'Japan Trip',
+    targetAmountMinor: 24000000, // ₹2,40,000
+    currentAmountMinor: 6000000, // ₹60,000
+    currency: 'INR',
+    targetDate: '2027-03-01',
+    createdAt: '2026-09-01T00:00:00.000Z',
+    updatedAt: '2026-09-01T00:00:00.000Z',
+  };
+
+  it('calculates required monthly savings to meet target date', () => {
+    // Remaining: ₹1,80,000 (18000000 minor)
+    // From 2026-09-01 to 2027-03-01 -> ~181 days -> ceil(181/30) = 7 months
+    const fromDate = new Date('2026-09-01');
+    const required = calculateRequiredMonthlySavings(
+      sampleGoal.targetAmountMinor,
+      sampleGoal.currentAmountMinor,
+      sampleGoal.targetDate,
+      fromDate
+    );
+    expect(required).toBe(Math.ceil(18000000 / 7));
+
+    // When target is already reached or exceeded
+    const completedRequired = calculateRequiredMonthlySavings(10000, 15000, '2027-01-01', fromDate);
+    expect(completedRequired).toBe(0);
+  });
+
+  it('projects completion date based on monthly contribution rate', () => {
+    const fromDate = new Date(2026, 8, 1); // 2026-09-01
+    // Remaining: 18,000,000. With 6,000,000/month contribution -> 3 months needed -> 2026-12-01
+    const projection = projectCompletionDate(sampleGoal, 6000000, fromDate);
+    expect(projection).toBe('2026-12-01');
+
+    // Rate <= 0 returns null
+    expect(projectCompletionDate(sampleGoal, 0, fromDate)).toBeNull();
+    expect(projectCompletionDate(sampleGoal, -1000, fromDate)).toBeNull();
+
+    // Already completed returns fromDate
+    const completedGoal: Goal = { ...sampleGoal, currentAmountMinor: 25000000 };
+    expect(projectCompletionDate(completedGoal, 10000, fromDate)).toBe('2026-09-01');
+  });
+
+  it('integrates projectedCompletionDate in calculateGoalProgress', () => {
+    const fromDate = new Date(2026, 8, 1);
+    const progressWithRate = calculateGoalProgress(sampleGoal, fromDate, 6000000);
+    expect(progressWithRate.projectedCompletionDate).toBe('2026-12-01');
+
+    const progressWithoutRate = calculateGoalProgress(sampleGoal, fromDate);
+    expect(progressWithoutRate.projectedCompletionDate).toBeNull();
+
+    const completedGoal: Goal = { ...sampleGoal, currentAmountMinor: 24000000 };
+    const progressCompleted = calculateGoalProgress(completedGoal, fromDate);
+    expect(progressCompleted.projectedCompletionDate).toBe('2026-09-01');
+    expect(progressCompleted.isCompleted).toBe(true);
+  });
+});
+
+describe('Domain: Phase 2 - Spending Trends & Classification', () => {
+  const transactions: Transaction[] = [
+    // Fixed: Recurring rent
+    {
+      id: 'tx-rent-sep',
+      accountId: 'acc-1',
+      type: 'expense',
+      amountMinor: 2500000, // ₹25,000
+      currency: 'INR',
+      date: '2026-09-01',
+      categoryId: 'cat-rent',
+      subcategory: null,
+      merchant: 'Landlord',
+      notes: null,
+      toAccountId: null,
+      isRecurring: true,
+      recurringFrequency: 'monthly',
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+    },
+    // Fixed: In fixedCategoryIds (cat-housing)
+    {
+      id: 'tx-housing-sep',
+      accountId: 'acc-1',
+      type: 'expense',
+      amountMinor: 500000, // ₹5,000
+      currency: 'INR',
+      date: '2026-09-02',
+      categoryId: 'cat-housing',
+      subcategory: null,
+      merchant: 'Maintenance',
+      notes: null,
+      toAccountId: null,
+      isRecurring: false,
+      recurringFrequency: null,
+      createdAt: '2026-09-02T00:00:00.000Z',
+      updatedAt: '2026-09-02T00:00:00.000Z',
+    },
+    // Variable: Dining
+    {
+      id: 'tx-dining-sep',
+      accountId: 'acc-1',
+      type: 'expense',
+      amountMinor: 1000000, // ₹10,000
+      currency: 'INR',
+      date: '2026-09-03',
+      categoryId: 'cat-dining',
+      subcategory: null,
+      merchant: 'Restaurant',
+      notes: null,
+      toAccountId: null,
+      isRecurring: false,
+      recurringFrequency: null,
+      createdAt: '2026-09-03T00:00:00.000Z',
+      updatedAt: '2026-09-03T00:00:00.000Z',
+    },
+    // Income: Salary
+    {
+      id: 'tx-salary-sep',
+      accountId: 'acc-1',
+      type: 'income',
+      amountMinor: 10000000, // ₹1,00,000
+      currency: 'INR',
+      date: '2026-09-01',
+      categoryId: 'cat-salary',
+      subcategory: null,
+      merchant: 'Employer',
+      notes: null,
+      toAccountId: null,
+      isRecurring: true,
+      recurringFrequency: 'monthly',
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+    },
+    // Transfer: Should be ignored everywhere
+    {
+      id: 'tx-transfer-sep',
+      accountId: 'acc-1',
+      type: 'transfer',
+      amountMinor: 3000000,
+      currency: 'INR',
+      date: '2026-09-04',
+      categoryId: null,
+      subcategory: null,
+      merchant: null,
+      notes: null,
+      toAccountId: 'acc-2',
+      isRecurring: false,
+      recurringFrequency: null,
+      createdAt: '2026-09-04T00:00:00.000Z',
+      updatedAt: '2026-09-04T00:00:00.000Z',
+    },
+    // Past month income and expense for trends
+    {
+      id: 'tx-salary-aug',
+      accountId: 'acc-1',
+      type: 'income',
+      amountMinor: 10000000,
+      currency: 'INR',
+      date: '2026-08-01',
+      categoryId: 'cat-salary',
+      subcategory: null,
+      merchant: 'Employer',
+      notes: null,
+      toAccountId: null,
+      isRecurring: true,
+      recurringFrequency: 'monthly',
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    },
+    {
+      id: 'tx-dining-aug',
+      accountId: 'acc-1',
+      type: 'expense',
+      amountMinor: 2000000,
+      currency: 'INR',
+      date: '2026-08-15',
+      categoryId: 'cat-dining',
+      subcategory: null,
+      merchant: 'Swiggy',
+      notes: null,
+      toAccountId: null,
+      isRecurring: false,
+      recurringFrequency: null,
+      createdAt: '2026-08-15T00:00:00.000Z',
+      updatedAt: '2026-08-15T00:00:00.000Z',
+    },
+  ];
+
+  it('classifies spending into fixed and variable accurately', () => {
+    // Fixed: rent (25,000) + housing (5,000) = 30,000 (3000000 minor)
+    // Variable: dining (10,000) + dining aug (20,000) = 30,000 (3000000 minor)
+    // Total: 60,000
+    // Income and transfer ignored!
+    const classification = classifySpending(transactions);
+    expect(classification.fixedSpendingMinor).toBe(3000000);
+    expect(classification.variableSpendingMinor).toBe(3000000);
+    expect(classification.totalSpendingMinor).toBe(6000000);
+    expect(classification.fixedPercentage).toBe(50);
+    expect(classification.variablePercentage).toBe(50);
+  });
+
+  it('calculates chronological spending trends excluding transfers', () => {
+    const refDate = new Date(2026, 8, 15); // Sept 2026
+    const trends = calculateSpendingTrends(transactions, 3, refDate);
+
+    // 3 months ending at Sept 2026: 2026-07, 2026-08, 2026-09
+    expect(trends).toHaveLength(3);
+    expect(trends[0]?.period).toBe('2026-07');
+    expect(trends[1]?.period).toBe('2026-08');
+    expect(trends[2]?.period).toBe('2026-09');
+
+    // 2026-07 has 0 activity
+    expect(trends[0]?.incomeMinor).toBe(0);
+    expect(trends[0]?.expenseMinor).toBe(0);
+    expect(trends[0]?.savingsMinor).toBe(0);
+    expect(trends[0]?.savingsRate).toBe(0);
+
+    // 2026-08: income 10000000, expense 2000000, savings 8000000, savingsRate 80%
+    expect(trends[1]?.incomeMinor).toBe(10000000);
+    expect(trends[1]?.expenseMinor).toBe(2000000);
+    expect(trends[1]?.savingsMinor).toBe(8000000);
+    expect(trends[1]?.savingsRate).toBe(80);
+
+    // 2026-09: income 10000000, expenses (2500000 + 500000 + 1000000 = 4000000), transfer ignored
+    expect(trends[2]?.incomeMinor).toBe(10000000);
+    expect(trends[2]?.expenseMinor).toBe(4000000);
+    expect(trends[2]?.savingsMinor).toBe(6000000);
+    expect(trends[2]?.savingsRate).toBe(60);
+  });
+});
+

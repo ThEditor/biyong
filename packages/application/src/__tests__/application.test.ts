@@ -5,11 +5,16 @@ import {
   CategoryUseCases,
   GroupUseCases,
   WealthUseCases,
+  BudgetUseCases,
+  GoalUseCases,
+  AnalyticsUseCases,
   type AccountRepository,
   type TransactionRepository,
   type CategoryRepository,
   type GroupRepository,
   type WealthRepository,
+  type BudgetRepository,
+  type GoalRepository,
 } from '../index.js';
 import type {
   Account,
@@ -21,6 +26,8 @@ import type {
   Settlement,
   Investment,
   Liability,
+  Budget,
+  Goal,
 } from '@biyong/schemas';
 
 class InMemoryAccountRepo implements AccountRepository {
@@ -79,6 +86,27 @@ class InMemoryWealthRepo implements WealthRepository {
   async saveInvestment(inv: Investment) { this.investments.push(inv); }
   async getLiabilities() { return this.liabilities; }
   async saveLiability(liab: Liability) { this.liabilities.push(liab); }
+}
+
+class InMemoryBudgetRepo implements BudgetRepository {
+  budgets: Map<string, Budget> = new Map();
+  async create(budget: Budget) { this.budgets.set(budget.id, budget); }
+  async findById(id: string) { return this.budgets.get(id) ?? null; }
+  async findByCategoryId(categoryId: string) {
+    return Array.from(this.budgets.values()).find((b) => b.categoryId === categoryId) ?? null;
+  }
+  async findAll() { return Array.from(this.budgets.values()); }
+  async update(budget: Budget) { this.budgets.set(budget.id, budget); }
+  async delete(id: string) { this.budgets.delete(id); }
+}
+
+class InMemoryGoalRepo implements GoalRepository {
+  goals: Map<string, Goal> = new Map();
+  async create(goal: Goal) { this.goals.set(goal.id, goal); }
+  async findById(id: string) { return this.goals.get(id) ?? null; }
+  async findAll() { return Array.from(this.goals.values()); }
+  async update(goal: Goal) { this.goals.set(goal.id, goal); }
+  async delete(id: string) { this.goals.delete(id); }
 }
 
 describe('Application: Transactions & Derived Balances', () => {
@@ -688,3 +716,515 @@ describe('Application: Category Use Cases', () => {
     });
   });
 });
+
+describe('Application: Budget Use Cases', () => {
+  let budgetRepo: InMemoryBudgetRepo;
+  let txRepo: InMemoryTxRepo;
+  let budgetUseCases: BudgetUseCases;
+
+  beforeEach(() => {
+    budgetRepo = new InMemoryBudgetRepo();
+    txRepo = new InMemoryTxRepo();
+    budgetUseCases = new BudgetUseCases(budgetRepo, txRepo);
+  });
+
+  it('supports budget CRUD operations', async () => {
+    const budget: Budget = {
+      id: 'b-dining',
+      categoryId: 'cat-dining',
+      amountMinor: 2000000, // ₹20,000
+      currency: 'INR',
+      period: 'monthly',
+      startDate: '2026-09-01',
+      endDate: null,
+      rollover: false,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+    };
+
+    await budgetUseCases.createBudget(budget);
+    expect(await budgetUseCases.getBudget('b-dining')).toEqual(budget);
+    expect(await budgetUseCases.getBudgetByCategory('cat-dining')).toEqual(budget);
+    expect(await budgetUseCases.getBudgetByCategory('non-existent')).toBeNull();
+
+    const all = await budgetUseCases.listBudgets();
+    expect(all).toHaveLength(1);
+
+    const updated = { ...budget, amountMinor: 2500000 };
+    await budgetUseCases.updateBudget(updated);
+    expect((await budgetUseCases.getBudget('b-dining'))?.amountMinor).toBe(2500000);
+
+    await budgetUseCases.deleteBudget('b-dining');
+    expect(await budgetUseCases.getBudget('b-dining')).toBeNull();
+  });
+
+  it('calculates budget status considering period dates and transaction categories', async () => {
+    const budget: Budget = {
+      id: 'b-dining',
+      categoryId: 'cat-dining',
+      amountMinor: 2000000, // ₹20,000
+      currency: 'INR',
+      period: 'monthly',
+      startDate: '2026-09-01',
+      endDate: null,
+      rollover: true,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+    };
+    await budgetRepo.create(budget);
+
+    // Matching expense within September 2026
+    await txRepo.create({
+      id: 'tx-1',
+      accountId: 'acc-1',
+      type: 'expense',
+      amountMinor: 500000, // ₹5,000
+      currency: 'INR',
+      date: '2026-09-05',
+      categoryId: 'cat-dining',
+      subcategory: null,
+      merchant: 'Bistro',
+      notes: null,
+      toAccountId: null,
+      isRecurring: false,
+      recurringFrequency: null,
+      createdAt: '2026-09-05T00:00:00.000Z',
+      updatedAt: '2026-09-05T00:00:00.000Z',
+    });
+
+    // Another matching expense in September
+    await txRepo.create({
+      id: 'tx-2',
+      accountId: 'acc-1',
+      type: 'expense',
+      amountMinor: 300000, // ₹3,000
+      currency: 'INR',
+      date: '2026-09-10',
+      categoryId: 'cat-dining',
+      subcategory: null,
+      merchant: 'Cafe',
+      notes: null,
+      toAccountId: null,
+      isRecurring: false,
+      recurringFrequency: null,
+      createdAt: '2026-09-10T00:00:00.000Z',
+      updatedAt: '2026-09-10T00:00:00.000Z',
+    });
+
+    // Expense in a different category (Groceries) -> should NOT count
+    await txRepo.create({
+      id: 'tx-3',
+      accountId: 'acc-1',
+      type: 'expense',
+      amountMinor: 400000,
+      currency: 'INR',
+      date: '2026-09-12',
+      categoryId: 'cat-groceries',
+      subcategory: null,
+      merchant: 'Supermarket',
+      notes: null,
+      toAccountId: null,
+      isRecurring: false,
+      recurringFrequency: null,
+      createdAt: '2026-09-12T00:00:00.000Z',
+      updatedAt: '2026-09-12T00:00:00.000Z',
+    });
+
+    // Expense outside period (August) -> should NOT count
+    await txRepo.create({
+      id: 'tx-4',
+      accountId: 'acc-1',
+      type: 'expense',
+      amountMinor: 900000,
+      currency: 'INR',
+      date: '2026-08-25',
+      categoryId: 'cat-dining',
+      subcategory: null,
+      merchant: 'Old Restaurant',
+      notes: null,
+      toAccountId: null,
+      isRecurring: false,
+      recurringFrequency: null,
+      createdAt: '2026-08-25T00:00:00.000Z',
+      updatedAt: '2026-08-25T00:00:00.000Z',
+    });
+
+    // Transfer in dining category -> should NOT count
+    await txRepo.create({
+      id: 'tx-5',
+      accountId: 'acc-1',
+      type: 'transfer',
+      amountMinor: 100000,
+      currency: 'INR',
+      date: '2026-09-15',
+      categoryId: 'cat-dining',
+      subcategory: null,
+      merchant: null,
+      notes: null,
+      toAccountId: 'acc-2',
+      isRecurring: false,
+      recurringFrequency: null,
+      createdAt: '2026-09-15T00:00:00.000Z',
+      updatedAt: '2026-09-15T00:00:00.000Z',
+    });
+
+    // Reference date: Sept 10, 2026 -> 20 days remaining
+    const refDate = new Date(2026, 8, 10);
+    const status = await budgetUseCases.getBudgetStatus('b-dining', refDate, 500000); // 500000 rollover
+
+    // Total spent: 500000 + 300000 = 800000
+    // Effective budget: 2000000 + 500000 = 2500000
+    expect(status.spentMinor).toBe(800000);
+    expect(status.effectiveBudgetMinor).toBe(2500000);
+    expect(status.remainingMinor).toBe(1700000);
+    expect(status.percentageUsed).toBe(32); // 800000 / 2500000 = 32%
+    expect(status.health).toBe('healthy');
+    expect(status.periodStart).toBe('2026-09-01');
+    expect(status.periodEnd).toBe('2026-09-30');
+    expect(status.daysRemaining).toBe(20);
+    expect(status.dailyAllowanceMinor).toBe(Math.floor(1700000 / 20));
+  });
+
+  it('throws error when requesting status for non-existent budget', async () => {
+    await expect(budgetUseCases.getBudgetStatus('not-found')).rejects.toThrow(
+      'Budget not found: not-found'
+    );
+  });
+
+  it('lists all budgets with status attached', async () => {
+    const budget1: Budget = {
+      id: 'b-1',
+      categoryId: 'cat-1',
+      amountMinor: 1000000,
+      currency: 'INR',
+      period: 'monthly',
+      startDate: '2026-09-01',
+      endDate: null,
+      rollover: false,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+    };
+    const budget2: Budget = {
+      id: 'b-2',
+      categoryId: 'cat-2',
+      amountMinor: 2000000,
+      currency: 'INR',
+      period: 'monthly',
+      startDate: '2026-09-01',
+      endDate: null,
+      rollover: false,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+    };
+    await budgetRepo.create(budget1);
+    await budgetRepo.create(budget2);
+
+    const listWithStatus = await budgetUseCases.listBudgetsWithStatus(new Date(2026, 8, 1));
+    expect(listWithStatus).toHaveLength(2);
+    expect(listWithStatus[0]?.budget.id).toBe('b-1');
+    expect(listWithStatus[0]?.remainingMinor).toBe(1000000);
+    expect(listWithStatus[1]?.budget.id).toBe('b-2');
+    expect(listWithStatus[1]?.remainingMinor).toBe(2000000);
+  });
+});
+
+describe('Application: Goal Use Cases', () => {
+  let goalRepo: InMemoryGoalRepo;
+  let goalUseCases: GoalUseCases;
+
+  beforeEach(() => {
+    goalRepo = new InMemoryGoalRepo();
+    goalUseCases = new GoalUseCases(goalRepo);
+  });
+
+  it('supports goal CRUD operations', async () => {
+    const goal: Goal = {
+      id: 'g-laptop',
+      title: 'MacBook Pro',
+      targetAmountMinor: 20000000, // ₹2,00,000
+      currentAmountMinor: 5000000, // ₹50,000
+      currency: 'INR',
+      targetDate: '2027-01-01',
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+    };
+
+    await goalUseCases.createGoal(goal);
+    expect(await goalUseCases.getGoal('g-laptop')).toEqual(goal);
+
+    const list = await goalUseCases.listGoals();
+    expect(list).toHaveLength(1);
+
+    const updated = { ...goal, targetAmountMinor: 22000000 };
+    await goalUseCases.updateGoal(updated);
+    expect((await goalUseCases.getGoal('g-laptop'))?.targetAmountMinor).toBe(22000000);
+
+    await goalUseCases.deleteGoal('g-laptop');
+    expect(await goalUseCases.getGoal('g-laptop')).toBeNull();
+  });
+
+  it('contributes to a goal and updates progress', async () => {
+    const goal: Goal = {
+      id: 'g-emergency',
+      title: 'Emergency Fund',
+      targetAmountMinor: 10000000, // ₹1,00,000
+      currentAmountMinor: 4000000, // ₹40,000
+      currency: 'INR',
+      targetDate: '2027-01-01',
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+    };
+    await goalRepo.create(goal);
+
+    const updated = await goalUseCases.contributeToGoal('g-emergency', 2000000); // Add ₹20,000
+    expect(updated.currentAmountMinor).toBe(6000000);
+
+    const saved = await goalRepo.findById('g-emergency');
+    expect(saved?.currentAmountMinor).toBe(6000000);
+
+    // Contribution to non-existent goal throws
+    await expect(goalUseCases.contributeToGoal('non-existent', 1000)).rejects.toThrow(
+      'Goal not found: non-existent'
+    );
+  });
+
+  it('gets goal progress with projected completion date and lists with progress', async () => {
+    const goal: Goal = {
+      id: 'g-trip',
+      title: 'Euro Trip',
+      targetAmountMinor: 30000000, // ₹3,00,000
+      currentAmountMinor: 10000000, // ₹1,00,000
+      currency: 'INR',
+      targetDate: '2027-09-01',
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+    };
+    await goalRepo.create(goal);
+
+    const fromDate = new Date(2026, 8, 1);
+    // Remaining: 20,000,000. Rate: 5,000,000/month -> 4 months -> 2027-01-01
+    const progress = await goalUseCases.getGoalProgress('g-trip', fromDate, 5000000);
+    expect(progress.goalId).toBe('g-trip');
+    expect(progress.remainingAmountMinor).toBe(20000000);
+    expect(progress.projectedCompletionDate).toBe('2027-01-01');
+
+    // List with progress
+    const list = await goalUseCases.listGoalsWithProgress(fromDate);
+    expect(list).toHaveLength(1);
+    expect(list[0]?.goal.id).toBe('g-trip');
+    expect(list[0]?.remainingAmountMinor).toBe(20000000);
+
+    // Non-existent goal throws
+    await expect(goalUseCases.getGoalProgress('not-found')).rejects.toThrow(
+      'Goal not found: not-found'
+    );
+  });
+});
+
+describe('Application: Analytics Use Cases', () => {
+  let txRepo: InMemoryTxRepo;
+  let analyticsUseCases: AnalyticsUseCases;
+
+  beforeEach(() => {
+    txRepo = new InMemoryTxRepo();
+    analyticsUseCases = new AnalyticsUseCases(txRepo);
+  });
+
+  it('calculates fixed vs variable spending accurately', async () => {
+    // Fixed: recurring rent ₹20,000
+    await txRepo.create({
+      id: 'tx-1',
+      accountId: 'acc-1',
+      type: 'expense',
+      amountMinor: 2000000,
+      currency: 'INR',
+      date: '2026-09-01',
+      categoryId: 'cat-rent',
+      subcategory: null,
+      merchant: 'Landlord',
+      notes: null,
+      toAccountId: null,
+      isRecurring: true,
+      recurringFrequency: 'monthly',
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+    });
+
+    // Fixed: in fixedCategoryIds (cat-utilities) ₹5,000
+    await txRepo.create({
+      id: 'tx-2',
+      accountId: 'acc-1',
+      type: 'expense',
+      amountMinor: 500000,
+      currency: 'INR',
+      date: '2026-09-02',
+      categoryId: 'cat-utilities',
+      subcategory: null,
+      merchant: 'Electric Board',
+      notes: null,
+      toAccountId: null,
+      isRecurring: false,
+      recurringFrequency: null,
+      createdAt: '2026-09-02T00:00:00.000Z',
+      updatedAt: '2026-09-02T00:00:00.000Z',
+    });
+
+    // Variable: shopping ₹25,000
+    await txRepo.create({
+      id: 'tx-3',
+      accountId: 'acc-1',
+      type: 'expense',
+      amountMinor: 2500000,
+      currency: 'INR',
+      date: '2026-09-03',
+      categoryId: 'cat-shopping',
+      subcategory: null,
+      merchant: 'Mall',
+      notes: null,
+      toAccountId: null,
+      isRecurring: false,
+      recurringFrequency: null,
+      createdAt: '2026-09-03T00:00:00.000Z',
+      updatedAt: '2026-09-03T00:00:00.000Z',
+    });
+
+    // Income ₹80,000 - should be ignored
+    await txRepo.create({
+      id: 'tx-4',
+      accountId: 'acc-1',
+      type: 'income',
+      amountMinor: 8000000,
+      currency: 'INR',
+      date: '2026-09-01',
+      categoryId: 'cat-salary',
+      subcategory: null,
+      merchant: null,
+      notes: null,
+      toAccountId: null,
+      isRecurring: false,
+      recurringFrequency: null,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+    });
+
+    // Transfer ₹10,000 - should be ignored
+    await txRepo.create({
+      id: 'tx-5',
+      accountId: 'acc-1',
+      type: 'transfer',
+      amountMinor: 1000000,
+      currency: 'INR',
+      date: '2026-09-04',
+      categoryId: null,
+      subcategory: null,
+      merchant: null,
+      notes: null,
+      toAccountId: 'acc-2',
+      isRecurring: false,
+      recurringFrequency: null,
+      createdAt: '2026-09-04T00:00:00.000Z',
+      updatedAt: '2026-09-04T00:00:00.000Z',
+    });
+
+    const result = await analyticsUseCases.getFixedVsVariable();
+    // Fixed: 2000000 + 500000 = 2500000
+    // Variable: 2500000
+    // Total: 5000000
+    expect(result.fixedSpendingMinor).toBe(2500000);
+    expect(result.variableSpendingMinor).toBe(2500000);
+    expect(result.totalSpendingMinor).toBe(5000000);
+    expect(result.fixedPercentage).toBe(50);
+    expect(result.variablePercentage).toBe(50);
+  });
+
+  it('calculates monthly spending trends with savings rate', async () => {
+    // August: income 60,000, expense 20,000
+    await txRepo.create({
+      id: 'tx-aug-inc',
+      accountId: 'acc-1',
+      type: 'income',
+      amountMinor: 6000000,
+      currency: 'INR',
+      date: '2026-08-01',
+      categoryId: null,
+      subcategory: null,
+      merchant: null,
+      notes: null,
+      toAccountId: null,
+      isRecurring: false,
+      recurringFrequency: null,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    });
+    await txRepo.create({
+      id: 'tx-aug-exp',
+      accountId: 'acc-1',
+      type: 'expense',
+      amountMinor: 2000000,
+      currency: 'INR',
+      date: '2026-08-10',
+      categoryId: null,
+      subcategory: null,
+      merchant: null,
+      notes: null,
+      toAccountId: null,
+      isRecurring: false,
+      recurringFrequency: null,
+      createdAt: '2026-08-10T00:00:00.000Z',
+      updatedAt: '2026-08-10T00:00:00.000Z',
+    });
+
+    // September: income 60,000, expense 30,000
+    await txRepo.create({
+      id: 'tx-sep-inc',
+      accountId: 'acc-1',
+      type: 'income',
+      amountMinor: 6000000,
+      currency: 'INR',
+      date: '2026-09-01',
+      categoryId: null,
+      subcategory: null,
+      merchant: null,
+      notes: null,
+      toAccountId: null,
+      isRecurring: false,
+      recurringFrequency: null,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+    });
+    await txRepo.create({
+      id: 'tx-sep-exp',
+      accountId: 'acc-1',
+      type: 'expense',
+      amountMinor: 3000000,
+      currency: 'INR',
+      date: '2026-09-10',
+      categoryId: null,
+      subcategory: null,
+      merchant: null,
+      notes: null,
+      toAccountId: null,
+      isRecurring: false,
+      recurringFrequency: null,
+      createdAt: '2026-09-10T00:00:00.000Z',
+      updatedAt: '2026-09-10T00:00:00.000Z',
+    });
+
+    const refDate = new Date(2026, 8, 15);
+    const trends = await analyticsUseCases.getSpendingTrends(2, refDate);
+
+    expect(trends).toHaveLength(2);
+    expect(trends[0]?.period).toBe('2026-08');
+    expect(trends[0]?.incomeMinor).toBe(6000000);
+    expect(trends[0]?.expenseMinor).toBe(2000000);
+    expect(trends[0]?.savingsMinor).toBe(4000000);
+    expect(trends[0]?.savingsRate).toBe(67); // 4000000 / 6000000 = 67%
+
+    expect(trends[1]?.period).toBe('2026-09');
+    expect(trends[1]?.incomeMinor).toBe(6000000);
+    expect(trends[1]?.expenseMinor).toBe(3000000);
+    expect(trends[1]?.savingsMinor).toBe(3000000);
+    expect(trends[1]?.savingsRate).toBe(50); // 3000000 / 6000000 = 50%
+  });
+});
+

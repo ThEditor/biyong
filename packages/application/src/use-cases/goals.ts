@@ -9,6 +9,22 @@ export class GoalUseCases {
     await this.goalRepo.create(goal);
   }
 
+  async getGoal(id: string): Promise<Goal | null> {
+    return this.goalRepo.findById(id);
+  }
+
+  async listGoals(): Promise<Goal[]> {
+    return this.goalRepo.findAll();
+  }
+
+  async updateGoal(goal: Goal): Promise<void> {
+    await this.goalRepo.update(goal);
+  }
+
+  async deleteGoal(id: string): Promise<void> {
+    await this.goalRepo.delete(id);
+  }
+
   async contributeToGoal(goalId: string, amountMinor: number): Promise<Goal> {
     const goal = await this.goalRepo.findById(goalId);
     if (!goal) {
@@ -25,12 +41,29 @@ export class GoalUseCases {
     return updated;
   }
 
-  async getGoalProgress(goalId: string, currentDate = new Date()): Promise<GoalProgress> {
+  async getGoalProgress(
+    goalId: string,
+    currentDate = new Date(),
+    monthlyContributionRateMinor?: number
+  ): Promise<GoalProgress> {
     const goal = await this.goalRepo.findById(goalId);
     if (!goal) {
       throw new Error(`Goal not found: ${goalId}`);
     }
 
-    return calculateGoalProgress(goal, currentDate);
+    return calculateGoalProgress(goal, currentDate, monthlyContributionRateMinor);
+  }
+
+  async listGoalsWithProgress(
+    currentDate = new Date()
+  ): Promise<Array<GoalProgress & { goal: Goal }>> {
+    const goals = await this.goalRepo.findAll();
+    return goals.map((goal) => {
+      const progress = calculateGoalProgress(goal, currentDate);
+      return {
+        ...progress,
+        goal,
+      };
+    });
   }
 }

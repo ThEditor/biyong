@@ -37,7 +37,7 @@ export class SqliteGoalRepository implements GoalRepository {
         goal.id,
         goal.title,
         goal.targetAmountMinor,
-        goal.currentAmountMinor,
+        goal.currentAmountMinor ?? 0,
         goal.currency,
         goal.targetDate,
         goal.createdAt,
@@ -63,7 +63,7 @@ export class SqliteGoalRepository implements GoalRepository {
       [
         goal.title,
         goal.targetAmountMinor,
-        goal.currentAmountMinor,
+        goal.currentAmountMinor ?? 0,
         goal.currency,
         goal.targetDate,
         goal.updatedAt,

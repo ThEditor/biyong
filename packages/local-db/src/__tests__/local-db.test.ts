@@ -6,9 +6,20 @@ import {
   SqliteTransactionRepository,
   SqliteGroupRepository,
   SqliteOutboxRepository,
+  SqliteBudgetRepository,
+  SqliteGoalRepository,
 } from '../index.js';
 import { MemorySqliteDriver } from '../memory-driver.js';
-import type { Account, Category, Transaction, Group, GroupMember, GroupExpense } from '@biyong/schemas';
+import type {
+  Account,
+  Category,
+  Transaction,
+  Group,
+  GroupMember,
+  GroupExpense,
+  Budget,
+  Goal,
+} from '@biyong/schemas';
 
 describe('Local DB: SQLite Schema & Repositories', () => {
   let driver: MemorySqliteDriver;
@@ -17,6 +28,8 @@ describe('Local DB: SQLite Schema & Repositories', () => {
   let txRepo: SqliteTransactionRepository;
   let groupRepo: SqliteGroupRepository;
   let outboxRepo: SqliteOutboxRepository;
+  let budgetRepo: SqliteBudgetRepository;
+  let goalRepo: SqliteGoalRepository;
 
   beforeEach(async () => {
     driver = new MemorySqliteDriver();
@@ -28,6 +41,8 @@ describe('Local DB: SQLite Schema & Repositories', () => {
     txRepo = new SqliteTransactionRepository(driver);
     groupRepo = new SqliteGroupRepository(driver);
     outboxRepo = new SqliteOutboxRepository(driver);
+    budgetRepo = new SqliteBudgetRepository(driver);
+    goalRepo = new SqliteGoalRepository(driver);
   });
 
   it('runs migrations and seeds builtin categories', async () => {
@@ -384,5 +399,355 @@ describe('Local DB: SQLite Schema & Repositories', () => {
     const incomeResults = await txRepo.findByFilter({ type: 'income' });
     expect(incomeResults).toHaveLength(1);
     expect(incomeResults[0]?.id).toBe('tx-3');
+  });
+
+  describe('SqliteBudgetRepository', () => {
+    it('creates weekly and monthly budgets with and without rollover', async () => {
+      const monthlyBudget: Budget = {
+        id: 'bgt-food',
+        categoryId: 'cat-food',
+        amountMinor: 1500000, // ₹15,000
+        currency: 'INR',
+        period: 'monthly',
+        startDate: '2026-09-01',
+        endDate: null,
+        rollover: true,
+        createdAt: '2026-09-01T00:00:00.000Z',
+        updatedAt: '2026-09-01T00:00:00.000Z',
+      };
+
+      const weeklyBudget: Budget = {
+        id: 'bgt-entertainment',
+        categoryId: 'cat-entertainment',
+        amountMinor: 200000, // ₹2,000
+        currency: 'INR',
+        period: 'weekly',
+        startDate: '2026-09-01',
+        endDate: '2026-09-07',
+        rollover: false,
+        createdAt: '2026-09-02T00:00:00.000Z',
+        updatedAt: '2026-09-02T00:00:00.000Z',
+      };
+
+      await budgetRepo.create(monthlyBudget);
+      await budgetRepo.create(weeklyBudget);
+
+      const fetchedMonthly = await budgetRepo.findById('bgt-food');
+      expect(fetchedMonthly).not.toBeNull();
+      expect(fetchedMonthly).toEqual(monthlyBudget);
+      expect(fetchedMonthly?.period).toBe('monthly');
+      expect(fetchedMonthly?.rollover).toBe(true);
+      expect(fetchedMonthly?.endDate).toBeNull();
+
+      const fetchedWeekly = await budgetRepo.findById('bgt-entertainment');
+      expect(fetchedWeekly).not.toBeNull();
+      expect(fetchedWeekly).toEqual(weeklyBudget);
+      expect(fetchedWeekly?.period).toBe('weekly');
+      expect(fetchedWeekly?.rollover).toBe(false);
+      expect(fetchedWeekly?.endDate).toBe('2026-09-07');
+    });
+
+    it('queries budget by ID and by category ID', async () => {
+      const budget: Budget = {
+        id: 'bgt-groceries',
+        categoryId: 'cat-groceries',
+        amountMinor: 800000, // ₹8,000
+        currency: 'INR',
+        period: 'monthly',
+        startDate: '2026-09-01',
+        endDate: null,
+        rollover: false,
+        createdAt: '2026-09-01T10:00:00.000Z',
+        updatedAt: '2026-09-01T10:00:00.000Z',
+      };
+
+      await budgetRepo.create(budget);
+
+      // Query by ID
+      const byId = await budgetRepo.findById('bgt-groceries');
+      expect(byId).not.toBeNull();
+      expect(byId?.id).toBe('bgt-groceries');
+      expect(byId?.amountMinor).toBe(800000);
+
+      // Query by Category ID
+      const byCategory = await budgetRepo.findByCategoryId('cat-groceries');
+      expect(byCategory).not.toBeNull();
+      expect(byCategory?.id).toBe('bgt-groceries');
+      expect(byCategory?.categoryId).toBe('cat-groceries');
+
+      // Non-existent lookups
+      const notFoundId = await budgetRepo.findById('bgt-non-existent');
+      expect(notFoundId).toBeNull();
+
+      const notFoundCategory = await budgetRepo.findByCategoryId('cat-non-existent');
+      expect(notFoundCategory).toBeNull();
+    });
+
+    it('updates budget amount, period, and rollover flag', async () => {
+      const budget: Budget = {
+        id: 'bgt-utilities',
+        categoryId: 'cat-utilities',
+        amountMinor: 300000, // ₹3,000
+        currency: 'INR',
+        period: 'monthly',
+        startDate: '2026-09-01',
+        endDate: null,
+        rollover: false,
+        createdAt: '2026-09-01T00:00:00.000Z',
+        updatedAt: '2026-09-01T00:00:00.000Z',
+      };
+
+      await budgetRepo.create(budget);
+
+      // Update amount, period, rollover, and endDate
+      const updatedBudget: Budget = {
+        ...budget,
+        amountMinor: 450000, // ₹4,500
+        period: 'weekly',
+        rollover: true,
+        endDate: '2026-09-30',
+        updatedAt: '2026-09-06T12:00:00.000Z',
+      };
+
+      await budgetRepo.update(updatedBudget);
+
+      const fetched = await budgetRepo.findById('bgt-utilities');
+      expect(fetched).not.toBeNull();
+      expect(fetched?.amountMinor).toBe(450000);
+      expect(fetched?.period).toBe('weekly');
+      expect(fetched?.rollover).toBe(true);
+      expect(fetched?.endDate).toBe('2026-09-30');
+      expect(fetched?.updatedAt).toBe('2026-09-06T12:00:00.000Z');
+    });
+
+    it('lists all budgets ordered by created_at DESC', async () => {
+      const b1: Budget = {
+        id: 'bgt-1',
+        categoryId: 'cat-food',
+        amountMinor: 1000000,
+        currency: 'INR',
+        period: 'monthly',
+        startDate: '2026-09-01',
+        endDate: null,
+        rollover: true,
+        createdAt: '2026-09-01T00:00:00.000Z',
+        updatedAt: '2026-09-01T00:00:00.000Z',
+      };
+      const b2: Budget = {
+        id: 'bgt-2',
+        categoryId: 'cat-travel',
+        amountMinor: 500000,
+        currency: 'INR',
+        period: 'weekly',
+        startDate: '2026-09-01',
+        endDate: '2026-09-07',
+        rollover: false,
+        createdAt: '2026-09-03T00:00:00.000Z',
+        updatedAt: '2026-09-03T00:00:00.000Z',
+      };
+      const b3: Budget = {
+        id: 'bgt-3',
+        categoryId: 'cat-shopping',
+        amountMinor: 2000000,
+        currency: 'INR',
+        period: 'monthly',
+        startDate: '2026-09-01',
+        endDate: null,
+        rollover: false,
+        createdAt: '2026-09-05T00:00:00.000Z',
+        updatedAt: '2026-09-05T00:00:00.000Z',
+      };
+
+      await budgetRepo.create(b1);
+      await budgetRepo.create(b2);
+      await budgetRepo.create(b3);
+
+      const all = await budgetRepo.findAll();
+      expect(all).toHaveLength(3);
+      // Ordered by created_at DESC: bgt-3, bgt-2, bgt-1
+      expect(all.map((b) => b.id)).toEqual(['bgt-3', 'bgt-2', 'bgt-1']);
+    });
+
+    it('deletes budget by ID', async () => {
+      const budget: Budget = {
+        id: 'bgt-del',
+        categoryId: 'cat-food',
+        amountMinor: 500000,
+        currency: 'INR',
+        period: 'monthly',
+        startDate: '2026-09-01',
+        endDate: null,
+        rollover: false,
+        createdAt: '2026-09-01T00:00:00.000Z',
+        updatedAt: '2026-09-01T00:00:00.000Z',
+      };
+
+      await budgetRepo.create(budget);
+      expect(await budgetRepo.findById('bgt-del')).not.toBeNull();
+
+      await budgetRepo.delete('bgt-del');
+      expect(await budgetRepo.findById('bgt-del')).toBeNull();
+
+      const all = await budgetRepo.findAll();
+      expect(all.find((b) => b.id === 'bgt-del')).toBeUndefined();
+    });
+  });
+
+  describe('SqliteGoalRepository', () => {
+    it('creates savings goals (emergency fund, vacation)', async () => {
+      const emergencyFund: Goal = {
+        id: 'goal-emergency',
+        title: 'Emergency Fund',
+        targetAmountMinor: 30000000, // ₹3,00,000
+        currentAmountMinor: 10000000, // ₹1,00,000
+        currency: 'INR',
+        targetDate: '2026-12-31',
+        createdAt: '2026-09-01T00:00:00.000Z',
+        updatedAt: '2026-09-01T00:00:00.000Z',
+      };
+
+      const vacationGoal: Goal = {
+        id: 'goal-vacation',
+        title: 'Japan Vacation',
+        targetAmountMinor: 20000000, // ₹2,00,000
+        currentAmountMinor: 0,
+        currency: 'INR',
+        targetDate: '2027-04-15',
+        createdAt: '2026-09-02T00:00:00.000Z',
+        updatedAt: '2026-09-02T00:00:00.000Z',
+      };
+
+      await goalRepo.create(emergencyFund);
+      await goalRepo.create(vacationGoal);
+
+      const fetchedEmergency = await goalRepo.findById('goal-emergency');
+      expect(fetchedEmergency).not.toBeNull();
+      expect(fetchedEmergency).toEqual(emergencyFund);
+      expect(fetchedEmergency?.title).toBe('Emergency Fund');
+      expect(fetchedEmergency?.targetAmountMinor).toBe(30000000);
+      expect(fetchedEmergency?.currentAmountMinor).toBe(10000000);
+
+      const fetchedVacation = await goalRepo.findById('goal-vacation');
+      expect(fetchedVacation).not.toBeNull();
+      expect(fetchedVacation).toEqual(vacationGoal);
+      expect(fetchedVacation?.currentAmountMinor).toBe(0);
+    });
+
+    it('queries goal by ID', async () => {
+      const goal: Goal = {
+        id: 'goal-laptop',
+        title: 'MacBook Pro M3',
+        targetAmountMinor: 18000000, // ₹1,80,000
+        currentAmountMinor: 6000000, // ₹60,000
+        currency: 'INR',
+        targetDate: '2026-11-30',
+        createdAt: '2026-09-01T00:00:00.000Z',
+        updatedAt: '2026-09-01T00:00:00.000Z',
+      };
+
+      await goalRepo.create(goal);
+
+      const fetched = await goalRepo.findById('goal-laptop');
+      expect(fetched).not.toBeNull();
+      expect(fetched?.title).toBe('MacBook Pro M3');
+      expect(fetched?.targetAmountMinor).toBe(18000000);
+      expect(fetched?.currentAmountMinor).toBe(6000000);
+
+      const notFound = await goalRepo.findById('goal-non-existent');
+      expect(notFound).toBeNull();
+    });
+
+    it('updates goal progress (current_amount_minor)', async () => {
+      const goal: Goal = {
+        id: 'goal-bike',
+        title: 'New Bicycle',
+        targetAmountMinor: 2500000, // ₹25,000
+        currentAmountMinor: 500000, // ₹5,000
+        currency: 'INR',
+        targetDate: '2026-10-31',
+        createdAt: '2026-09-01T00:00:00.000Z',
+        updatedAt: '2026-09-01T00:00:00.000Z',
+      };
+
+      await goalRepo.create(goal);
+
+      // Progress update: added ₹10,000
+      const updated: Goal = {
+        ...goal,
+        currentAmountMinor: 1500000, // ₹15,000
+        updatedAt: '2026-09-06T15:00:00.000Z',
+      };
+
+      await goalRepo.update(updated);
+
+      const fetched = await goalRepo.findById('goal-bike');
+      expect(fetched).not.toBeNull();
+      expect(fetched?.currentAmountMinor).toBe(1500000);
+      expect(fetched?.updatedAt).toBe('2026-09-06T15:00:00.000Z');
+    });
+
+    it('lists all goals sorted by target_date ASC', async () => {
+      const g1: Goal = {
+        id: 'goal-far',
+        title: 'Home Renovation',
+        targetAmountMinor: 50000000,
+        currentAmountMinor: 10000000,
+        currency: 'INR',
+        targetDate: '2027-12-31',
+        createdAt: '2026-09-01T00:00:00.000Z',
+        updatedAt: '2026-09-01T00:00:00.000Z',
+      };
+      const g2: Goal = {
+        id: 'goal-near',
+        title: 'Festival Shopping',
+        targetAmountMinor: 3000000,
+        currentAmountMinor: 1500000,
+        currency: 'INR',
+        targetDate: '2026-10-15',
+        createdAt: '2026-09-02T00:00:00.000Z',
+        updatedAt: '2026-09-02T00:00:00.000Z',
+      };
+      const g3: Goal = {
+        id: 'goal-mid',
+        title: 'Annual Insurance',
+        targetAmountMinor: 2000000,
+        currentAmountMinor: 500000,
+        currency: 'INR',
+        targetDate: '2027-03-01',
+        createdAt: '2026-09-03T00:00:00.000Z',
+        updatedAt: '2026-09-03T00:00:00.000Z',
+      };
+
+      await goalRepo.create(g1);
+      await goalRepo.create(g2);
+      await goalRepo.create(g3);
+
+      const all = await goalRepo.findAll();
+      expect(all).toHaveLength(3);
+      // Ordered by target_date ASC: goal-near (2026-10-15), goal-mid (2027-03-01), goal-far (2027-12-31)
+      expect(all.map((g) => g.id)).toEqual(['goal-near', 'goal-mid', 'goal-far']);
+    });
+
+    it('deletes goal by ID', async () => {
+      const goal: Goal = {
+        id: 'goal-del',
+        title: 'Temporary Goal',
+        targetAmountMinor: 1000000,
+        currentAmountMinor: 0,
+        currency: 'INR',
+        targetDate: '2026-12-01',
+        createdAt: '2026-09-01T00:00:00.000Z',
+        updatedAt: '2026-09-01T00:00:00.000Z',
+      };
+
+      await goalRepo.create(goal);
+      expect(await goalRepo.findById('goal-del')).not.toBeNull();
+
+      await goalRepo.delete('goal-del');
+      expect(await goalRepo.findById('goal-del')).toBeNull();
+
+      const all = await goalRepo.findAll();
+      expect(all.find((g) => g.id === 'goal-del')).toBeUndefined();
+    });
   });
 });
