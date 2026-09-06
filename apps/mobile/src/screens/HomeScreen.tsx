@@ -217,21 +217,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 {syncLabel}
               </Text>
             </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => openAddModal()}
-              style={[
-                styles.headerAddBtn,
-                {
-                  backgroundColor: colors.surface,
-                  borderColor: colors.border,
-                  borderRadius: tokens.radius.full,
-                },
-              ]}
-              activeOpacity={0.7}
-            >
-              <Feather name="plus" size={17} color={colors.textPrimary} />
-            </TouchableOpacity>
           </HStack>
         </HStack>
 
