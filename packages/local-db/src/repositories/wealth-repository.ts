@@ -31,9 +31,8 @@ interface LiabilityRow {
 export class SqliteWealthRepository implements WealthRepository {
   constructor(private driver: SqliteDriver) {}
 
-  async getInvestments(): Promise<Investment[]> {
-    const rows = await this.driver.query<InvestmentRow>('SELECT * FROM investments ORDER BY created_at DESC');
-    return rows.map((r) => ({
+  private mapInvestmentRow(r: InvestmentRow): Investment {
+    return {
       id: r.id,
       name: r.name,
       type: r.type,
@@ -43,7 +42,33 @@ export class SqliteWealthRepository implements WealthRepository {
       notes: r.notes,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
-    }));
+    };
+  }
+
+  private mapLiabilityRow(r: LiabilityRow): Liability {
+    return {
+      id: r.id,
+      name: r.name,
+      type: r.type,
+      principalAmountMinor: r.principal_amount_minor,
+      remainingAmountMinor: r.remaining_amount_minor,
+      currency: r.currency,
+      interestRatePercent: r.interest_rate_percent,
+      dueDate: r.due_date,
+      notes: r.notes,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    };
+  }
+
+  async getInvestments(): Promise<Investment[]> {
+    const rows = await this.driver.query<InvestmentRow>('SELECT * FROM investments ORDER BY created_at DESC');
+    return rows.map((r) => this.mapInvestmentRow(r));
+  }
+
+  async findInvestmentById(id: string): Promise<Investment | null> {
+    const row = await this.driver.queryOne<InvestmentRow>('SELECT * FROM investments WHERE id = ?', [id]);
+    return row ? this.mapInvestmentRow(row) : null;
   }
 
   async saveInvestment(inv: Investment): Promise<void> {
@@ -86,21 +111,18 @@ export class SqliteWealthRepository implements WealthRepository {
     }
   }
 
+  async deleteInvestment(id: string): Promise<void> {
+    await this.driver.run('DELETE FROM investments WHERE id = ?', [id]);
+  }
+
   async getLiabilities(): Promise<Liability[]> {
     const rows = await this.driver.query<LiabilityRow>('SELECT * FROM liabilities ORDER BY created_at DESC');
-    return rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      type: r.type,
-      principalAmountMinor: r.principal_amount_minor,
-      remainingAmountMinor: r.remaining_amount_minor,
-      currency: r.currency,
-      interestRatePercent: r.interest_rate_percent,
-      dueDate: r.due_date,
-      notes: r.notes,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-    }));
+    return rows.map((r) => this.mapLiabilityRow(r));
+  }
+
+  async findLiabilityById(id: string): Promise<Liability | null> {
+    const row = await this.driver.queryOne<LiabilityRow>('SELECT * FROM liabilities WHERE id = ?', [id]);
+    return row ? this.mapLiabilityRow(row) : null;
   }
 
   async saveLiability(liab: Liability): Promise<void> {
@@ -145,5 +167,9 @@ export class SqliteWealthRepository implements WealthRepository {
         ]
       );
     }
+  }
+
+  async deleteLiability(id: string): Promise<void> {
+    await this.driver.run('DELETE FROM liabilities WHERE id = ?', [id]);
   }
 }

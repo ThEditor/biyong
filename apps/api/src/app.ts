@@ -10,11 +10,15 @@ import {
   CreateSharedExpenseRequestSchema,
   UpdateSharedExpenseRequestSchema,
   CreateSettlementRequestSchema,
+  InvestmentSchema,
+  LiabilitySchema,
   type Group,
   type GroupMember,
   type GroupExpense,
   type Settlement,
   type GroupInvitation,
+  type Investment,
+  type Liability,
 } from '@biyong/schemas';
 import {
   canEditExpense,
@@ -24,6 +28,7 @@ import {
   calculateSplit,
   buildDependencyGraph,
   explainMemberSettlement,
+  calculateNetWorth,
 } from '@biyong/domain';
 import { randomUUID } from 'node:crypto';
 
@@ -54,6 +59,10 @@ export function createApp() {
   const groupExpensesMap = new Map<string, GroupExpense[]>(); // groupId -> GroupExpense[]
   const settlementsMap = new Map<string, Settlement[]>(); // groupId -> Settlement[]
   const invitesMap = new Map<string, GroupInvitation>(); // inviteCode -> GroupInvitation
+
+  // In-memory store for wealth: investments and liabilities (Phase 6)
+  const investmentsMap = new Map<string, Investment & { userId: string }>();
+  const liabilitiesMap = new Map<string, Liability & { userId: string }>();
 
   // Helper to authenticate request from Authorization header
   function getAuthUser(c: any): { id: string; email: string; name: string } | null {
@@ -754,6 +763,376 @@ export function createApp() {
     const explanation = explainMemberSettlement(memberId, memberIds, expenses, settlements);
 
     return c.json({ explanation }, 200);
+  });
+
+  // ==========================================
+  // Phase 6: Wealth Endpoints (Investments & Liabilities)
+  // ==========================================
+
+  // GET /wealth/investments: List user's investments
+  app.get('/wealth/investments', (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const investments = Array.from(investmentsMap.values()).filter(
+      (inv) => inv.userId === user.id
+    );
+
+    return c.json({ investments }, 200);
+  });
+
+  // POST /wealth/investments: Create an investment
+  app.post('/wealth/investments', async (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const body = await c.req.json();
+    const now = new Date().toISOString();
+    const input = {
+      id: body.id || randomUUID(),
+      name: body.name,
+      type: body.type,
+      investedAmountMinor: body.investedAmountMinor,
+      currentValueMinor: body.currentValueMinor,
+      currency: body.currency,
+      notes: body.notes ?? null,
+      createdAt: body.createdAt || now,
+      updatedAt: body.updatedAt || now,
+    };
+
+    const parsed = InvestmentSchema.safeParse(input);
+    if (!parsed.success) {
+      return c.json({ error: 'Validation failed', details: parsed.error.issues }, 400);
+    }
+
+    const investment: Investment & { userId: string } = {
+      ...parsed.data,
+      userId: user.id,
+    };
+
+    investmentsMap.set(investment.id, investment);
+
+    const syncOp = {
+      id: randomUUID(),
+      entityType: 'investment',
+      entityId: investment.id,
+      operationType: 'create',
+      payload: investment as unknown as Record<string, unknown>,
+      timestamp: investment.createdAt,
+      deviceId: 'server',
+      status: 'synced',
+    };
+    syncedOpsMap.set(syncOp.id, syncOp);
+
+    return c.json({ investment }, 201);
+  });
+
+  // PUT /wealth/investments/:id: Update an investment owned by user
+  app.put('/wealth/investments/:id', async (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const id = c.req.param('id');
+    const existing = investmentsMap.get(id);
+    if (!existing) {
+      return c.json({ error: 'Investment not found' }, 404);
+    }
+    if (existing.userId !== user.id) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    const body = await c.req.json();
+    const now = new Date().toISOString();
+    const input = {
+      id,
+      name: body.name ?? existing.name,
+      type: body.type ?? existing.type,
+      investedAmountMinor: body.investedAmountMinor ?? existing.investedAmountMinor,
+      currentValueMinor: body.currentValueMinor ?? existing.currentValueMinor,
+      currency: body.currency ?? existing.currency,
+      notes: body.notes !== undefined ? body.notes : existing.notes,
+      createdAt: body.createdAt || existing.createdAt,
+      updatedAt: body.updatedAt || now,
+    };
+
+    const parsed = InvestmentSchema.safeParse(input);
+    if (!parsed.success) {
+      return c.json({ error: 'Validation failed', details: parsed.error.issues }, 400);
+    }
+
+    const updated: Investment & { userId: string } = {
+      ...parsed.data,
+      userId: user.id,
+    };
+
+    investmentsMap.set(id, updated);
+
+    const syncOp = {
+      id: randomUUID(),
+      entityType: 'investment',
+      entityId: id,
+      operationType: 'update',
+      payload: updated as unknown as Record<string, unknown>,
+      timestamp: updated.updatedAt,
+      deviceId: 'server',
+      status: 'synced',
+    };
+    syncedOpsMap.set(syncOp.id, syncOp);
+
+    return c.json({ investment: updated }, 200);
+  });
+
+  // DELETE /wealth/investments/:id: Delete an investment owned by user
+  app.delete('/wealth/investments/:id', (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const id = c.req.param('id');
+    const existing = investmentsMap.get(id);
+    if (!existing) {
+      return c.json({ error: 'Investment not found' }, 404);
+    }
+    if (existing.userId !== user.id) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    investmentsMap.delete(id);
+
+    const now = new Date().toISOString();
+    const syncOp = {
+      id: randomUUID(),
+      entityType: 'investment',
+      entityId: id,
+      operationType: 'delete',
+      payload: { id },
+      timestamp: now,
+      deviceId: 'server',
+      status: 'synced',
+    };
+    syncedOpsMap.set(syncOp.id, syncOp);
+
+    return c.json({ success: true }, 200);
+  });
+
+  // GET /wealth/liabilities: List user's liabilities
+  app.get('/wealth/liabilities', (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const liabilities = Array.from(liabilitiesMap.values()).filter(
+      (liab) => liab.userId === user.id
+    );
+
+    return c.json({ liabilities }, 200);
+  });
+
+  // POST /wealth/liabilities: Create a liability
+  app.post('/wealth/liabilities', async (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const body = await c.req.json();
+    const now = new Date().toISOString();
+    const input = {
+      id: body.id || randomUUID(),
+      name: body.name,
+      type: body.type,
+      principalAmountMinor: body.principalAmountMinor,
+      remainingAmountMinor:
+        body.remainingAmountMinor !== undefined
+          ? body.remainingAmountMinor
+          : body.principalAmountMinor,
+      currency: body.currency,
+      interestRatePercent: body.interestRatePercent ?? 0,
+      dueDate: body.dueDate ?? null,
+      notes: body.notes ?? null,
+      createdAt: body.createdAt || now,
+      updatedAt: body.updatedAt || now,
+    };
+
+    const parsed = LiabilitySchema.safeParse(input);
+    if (!parsed.success) {
+      return c.json({ error: 'Validation failed', details: parsed.error.issues }, 400);
+    }
+
+    const liability: Liability & { userId: string } = {
+      ...parsed.data,
+      userId: user.id,
+    };
+
+    liabilitiesMap.set(liability.id, liability);
+
+    const syncOp = {
+      id: randomUUID(),
+      entityType: 'liability',
+      entityId: liability.id,
+      operationType: 'create',
+      payload: liability as unknown as Record<string, unknown>,
+      timestamp: liability.createdAt,
+      deviceId: 'server',
+      status: 'synced',
+    };
+    syncedOpsMap.set(syncOp.id, syncOp);
+
+    return c.json({ liability }, 201);
+  });
+
+  // PUT /wealth/liabilities/:id: Update a liability owned by user
+  app.put('/wealth/liabilities/:id', async (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const id = c.req.param('id');
+    const existing = liabilitiesMap.get(id);
+    if (!existing) {
+      return c.json({ error: 'Liability not found' }, 404);
+    }
+    if (existing.userId !== user.id) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    const body = await c.req.json();
+    const now = new Date().toISOString();
+    const input = {
+      id,
+      name: body.name ?? existing.name,
+      type: body.type ?? existing.type,
+      principalAmountMinor: body.principalAmountMinor ?? existing.principalAmountMinor,
+      remainingAmountMinor:
+        body.remainingAmountMinor !== undefined
+          ? body.remainingAmountMinor
+          : existing.remainingAmountMinor,
+      currency: body.currency ?? existing.currency,
+      interestRatePercent:
+        body.interestRatePercent !== undefined
+          ? body.interestRatePercent
+          : existing.interestRatePercent,
+      dueDate: body.dueDate !== undefined ? body.dueDate : existing.dueDate,
+      notes: body.notes !== undefined ? body.notes : existing.notes,
+      createdAt: body.createdAt || existing.createdAt,
+      updatedAt: body.updatedAt || now,
+    };
+
+    const parsed = LiabilitySchema.safeParse(input);
+    if (!parsed.success) {
+      return c.json({ error: 'Validation failed', details: parsed.error.issues }, 400);
+    }
+
+    const updated: Liability & { userId: string } = {
+      ...parsed.data,
+      userId: user.id,
+    };
+
+    liabilitiesMap.set(id, updated);
+
+    const syncOp = {
+      id: randomUUID(),
+      entityType: 'liability',
+      entityId: id,
+      operationType: 'update',
+      payload: updated as unknown as Record<string, unknown>,
+      timestamp: updated.updatedAt,
+      deviceId: 'server',
+      status: 'synced',
+    };
+    syncedOpsMap.set(syncOp.id, syncOp);
+
+    return c.json({ liability: updated }, 200);
+  });
+
+  // DELETE /wealth/liabilities/:id: Delete a liability owned by user
+  app.delete('/wealth/liabilities/:id', (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const id = c.req.param('id');
+    const existing = liabilitiesMap.get(id);
+    if (!existing) {
+      return c.json({ error: 'Liability not found' }, 404);
+    }
+    if (existing.userId !== user.id) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    liabilitiesMap.delete(id);
+
+    const now = new Date().toISOString();
+    const syncOp = {
+      id: randomUUID(),
+      entityType: 'liability',
+      entityId: id,
+      operationType: 'delete',
+      payload: { id },
+      timestamp: now,
+      deviceId: 'server',
+      status: 'synced',
+    };
+    syncedOpsMap.set(syncOp.id, syncOp);
+
+    return c.json({ success: true }, 200);
+  });
+
+  // POST /wealth/liabilities/:id/pay: Record payment towards liability
+  app.post('/wealth/liabilities/:id/pay', async (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const id = c.req.param('id');
+    const existing = liabilitiesMap.get(id);
+    if (!existing) {
+      return c.json({ error: 'Liability not found' }, 404);
+    }
+    if (existing.userId !== user.id) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    const body = await c.req.json();
+    const amountMinor = body?.amountMinor;
+    if (typeof amountMinor !== 'number' || isNaN(amountMinor) || amountMinor <= 0) {
+      return c.json({ error: 'Invalid payment amount' }, 400);
+    }
+
+    const paymentMinor = Math.round(amountMinor);
+    const newRemaining = Math.max(0, existing.remainingAmountMinor - paymentMinor);
+    const now = new Date().toISOString();
+    const updated: Liability & { userId: string } = {
+      ...existing,
+      remainingAmountMinor: newRemaining,
+      updatedAt: now,
+    };
+
+    liabilitiesMap.set(id, updated);
+
+    const syncOp = {
+      id: randomUUID(),
+      entityType: 'liability',
+      entityId: id,
+      operationType: 'update',
+      payload: updated as unknown as Record<string, unknown>,
+      timestamp: now,
+      deviceId: 'server',
+      status: 'synced',
+    };
+    syncedOpsMap.set(syncOp.id, syncOp);
+
+    return c.json({ liability: updated, paymentMinor }, 200);
+  });
+
+  // GET /wealth/summary: Net worth summary using domain logic
+  app.get('/wealth/summary', (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const investments = Array.from(investmentsMap.values()).filter(
+      (inv) => inv.userId === user.id
+    );
+    const liabilities = Array.from(liabilitiesMap.values()).filter(
+      (liab) => liab.userId === user.id
+    );
+
+    const summary = calculateNetWorth([], investments, liabilities);
+
+    return c.json({ summary }, 200);
   });
 
   return app;

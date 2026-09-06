@@ -20,6 +20,7 @@ import { BudgetsGoalsScreen } from './src/screens/BudgetsGoalsScreen';
 import { GroupsScreen } from './src/screens/GroupsScreen';
 import { ReportsScreen } from './src/screens/ReportsScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
+import { NetWorthScreen } from './src/screens/NetWorthScreen';
 import { QuickAddModal } from './src/components/QuickAddModal';
 import { OnboardingModal } from './src/components/OnboardingModal';
 import { AuthModal } from './src/components/AuthModal';
@@ -31,7 +32,8 @@ type ScreenType =
   | 'groups'
   | 'budgets'
   | 'reports'
-  | 'settings';
+  | 'settings'
+  | 'networth';
 
 interface BottomTabItem {
   id: ScreenType;
@@ -99,6 +101,7 @@ function MainNavigator() {
             onNavigateToGroups={() => setActiveScreen('groups')}
             onNavigateToReports={() => setActiveScreen('reports')}
             onNavigateToPlan={() => setActiveScreen('budgets')}
+            onNavigateToNetWorth={() => setActiveScreen('networth')}
           />
         );
       case 'accounts':
@@ -113,6 +116,8 @@ function MainNavigator() {
         return <ReportsScreen />;
       case 'settings':
         return <SettingsScreen />;
+      case 'networth':
+        return <NetWorthScreen onBack={() => setActiveScreen('home')} />;
     }
   };
 
@@ -120,7 +125,8 @@ function MainNavigator() {
     activeScreen === 'home' ||
     activeScreen === 'accounts' ||
     activeScreen === 'transactions' ||
-    activeScreen === 'groups';
+    activeScreen === 'groups' ||
+    activeScreen === 'networth';
 
   return (
     <View

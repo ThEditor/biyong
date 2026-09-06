@@ -25,6 +25,7 @@ export interface HomeScreenProps {
   onNavigateToGroups: () => void;
   onNavigateToReports?: () => void;
   onNavigateToPlan?: () => void;
+  onNavigateToNetWorth?: () => void;
 }
 
 const MONTH_NAMES = [
@@ -48,10 +49,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onNavigateToGroups,
   onNavigateToReports,
   onNavigateToPlan,
+  onNavigateToNetWorth,
 }) => {
   const { colors, tokens } = useAppTheme();
   const {
     netWorthMinor,
+    wealthSummary,
     accounts,
     transactions,
     categories,
@@ -357,6 +360,59 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             </Text>
           </TouchableOpacity>
         </HStack>
+
+        {/* Wealth & Net Worth Banner Card */}
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => onNavigateToNetWorth?.()}
+        >
+          <Card
+            backgroundColor={colors.surface}
+            borderColor={colors.border}
+            borderWidth={1}
+            borderRadius={tokens.radius.lg}
+            p={tokens.spacing.md}
+          >
+            <HStack justifyContent="space-between" alignItems="center">
+              <HStack space="sm" alignItems="center">
+                <View
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    backgroundColor: colors.accentSubtle,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Feather name="layers" size={18} color={colors.accentPrimary} />
+                </View>
+                <VStack>
+                  <HStack space="xs" alignItems="center">
+                    <Text color={colors.textSecondary} fontSize={11} fontWeight="700" letterSpacing={0.5} textTransform="uppercase">
+                      Wealth & Net Worth
+                    </Text>
+                  </HStack>
+                  <Text color={colors.textPrimary} fontSize={16} fontWeight="800" mt={2}>
+                    {isBalanceHidden ? '₹ ••••••' : formatMoney(wealthSummary?.netWorthMinor ?? netWorthMinor, 'INR')}
+                  </Text>
+                </VStack>
+              </HStack>
+
+              <HStack space="xs" alignItems="center">
+                <VStack alignItems="flex-end" mr={4}>
+                  <Text color={colors.success} fontSize={11} fontWeight="600">
+                    +{formatMoney(wealthSummary?.totalAssetsMinor ?? netWorthMinor, 'INR')}
+                  </Text>
+                  <Text color={colors.danger} fontSize={11} fontWeight="600">
+                    -{formatMoney(wealthSummary?.totalLiabilitiesMinor ?? 0, 'INR')}
+                  </Text>
+                </VStack>
+                <Feather name="chevron-right" size={16} color={colors.textSecondary} />
+              </HStack>
+            </HStack>
+          </Card>
+        </TouchableOpacity>
 
         {/* Cashflow Summary Card */}
         <TouchableOpacity

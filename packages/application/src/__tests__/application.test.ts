@@ -83,9 +83,21 @@ class InMemoryWealthRepo implements WealthRepository {
   investments: Investment[] = [];
   liabilities: Liability[] = [];
   async getInvestments() { return this.investments; }
-  async saveInvestment(inv: Investment) { this.investments.push(inv); }
+  async findInvestmentById(id: string) { return this.investments.find((i) => i.id === id) ?? null; }
+  async saveInvestment(inv: Investment) {
+    const idx = this.investments.findIndex((i) => i.id === inv.id);
+    if (idx >= 0) this.investments[idx] = inv;
+    else this.investments.push(inv);
+  }
+  async deleteInvestment(id: string) { this.investments = this.investments.filter((i) => i.id !== id); }
   async getLiabilities() { return this.liabilities; }
-  async saveLiability(liab: Liability) { this.liabilities.push(liab); }
+  async findLiabilityById(id: string) { return this.liabilities.find((l) => l.id === id) ?? null; }
+  async saveLiability(liab: Liability) {
+    const idx = this.liabilities.findIndex((l) => l.id === liab.id);
+    if (idx >= 0) this.liabilities[idx] = liab;
+    else this.liabilities.push(liab);
+  }
+  async deleteLiability(id: string) { this.liabilities = this.liabilities.filter((l) => l.id !== id); }
 }
 
 class InMemoryBudgetRepo implements BudgetRepository {

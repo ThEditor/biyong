@@ -7,6 +7,7 @@ import {
   SqliteCategoryRepository,
   SqliteBudgetRepository,
   SqliteGoalRepository,
+  SqliteWealthRepository,
   SqliteGroupRepository,
   SqliteSyncStateRepository,
   SqliteOutboxRepository,
@@ -19,6 +20,7 @@ import {
   GoalUseCases,
   AnalyticsUseCases,
   GroupUseCases,
+  WealthUseCases,
 } from '@biyong/application';
 import type { Account } from '@biyong/schemas';
 
@@ -54,6 +56,7 @@ export interface LedgerDatabaseServices {
   categoryRepo: SqliteCategoryRepository;
   budgetRepo: SqliteBudgetRepository;
   goalRepo: SqliteGoalRepository;
+  wealthRepo: SqliteWealthRepository;
   groupRepo: SqliteGroupRepository;
   syncStateRepo: SqliteSyncStateRepository;
   outboxRepo: SqliteOutboxRepository;
@@ -64,6 +67,7 @@ export interface LedgerDatabaseServices {
   goalUseCases: GoalUseCases;
   analyticsUseCases: AnalyticsUseCases;
   groupUseCases: GroupUseCases;
+  wealthUseCases: WealthUseCases;
 }
 
 let dbInstance: SQLite.SQLiteDatabase | null = null;
@@ -89,6 +93,7 @@ export async function initDatabase(): Promise<LedgerDatabaseServices> {
   const categoryRepo = new SqliteCategoryRepository(driver);
   const budgetRepo = new SqliteBudgetRepository(driver);
   const goalRepo = new SqliteGoalRepository(driver);
+  const wealthRepo = new SqliteWealthRepository(driver);
   const groupRepo = new SqliteGroupRepository(driver);
   const syncStateRepo = new SqliteSyncStateRepository(driver);
   const outboxRepo = new SqliteOutboxRepository(driver);
@@ -101,6 +106,7 @@ export async function initDatabase(): Promise<LedgerDatabaseServices> {
   const goalUseCases = new GoalUseCases(goalRepo);
   const analyticsUseCases = new AnalyticsUseCases(txRepo);
   const groupUseCases = new GroupUseCases(groupRepo);
+  const wealthUseCases = new WealthUseCases(accountRepo, txRepo, wealthRepo);
 
   // App starts with no data (clean slate for user)
 
@@ -111,6 +117,7 @@ export async function initDatabase(): Promise<LedgerDatabaseServices> {
     categoryRepo,
     budgetRepo,
     goalRepo,
+    wealthRepo,
     groupRepo,
     syncStateRepo,
     outboxRepo,
@@ -121,6 +128,7 @@ export async function initDatabase(): Promise<LedgerDatabaseServices> {
     goalUseCases,
     analyticsUseCases,
     groupUseCases,
+    wealthUseCases,
   };
 
   return cachedServices;

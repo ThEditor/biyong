@@ -73,7 +73,11 @@ export interface GoalRepository {
 
 export interface WealthRepository {
   getInvestments(): Promise<Investment[]>;
+  findInvestmentById(id: string): Promise<Investment | null>;
   saveInvestment(inv: Investment): Promise<void>;
+  deleteInvestment(id: string): Promise<void>;
   getLiabilities(): Promise<Liability[]>;
+  findLiabilityById(id: string): Promise<Liability | null>;
   saveLiability(liab: Liability): Promise<void>;
+  deleteLiability(id: string): Promise<void>;
 }

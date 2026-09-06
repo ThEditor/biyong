@@ -8,6 +8,7 @@ import {
   SqliteOutboxRepository,
   SqliteBudgetRepository,
   SqliteGoalRepository,
+  SqliteWealthRepository,
 } from '../index.js';
 import { MemorySqliteDriver } from '../memory-driver.js';
 import type {
@@ -19,6 +20,8 @@ import type {
   GroupExpense,
   Budget,
   Goal,
+  Investment,
+  Liability,
 } from '@biyong/schemas';
 
 describe('Local DB: SQLite Schema & Repositories', () => {
@@ -30,6 +33,7 @@ describe('Local DB: SQLite Schema & Repositories', () => {
   let outboxRepo: SqliteOutboxRepository;
   let budgetRepo: SqliteBudgetRepository;
   let goalRepo: SqliteGoalRepository;
+  let wealthRepo: SqliteWealthRepository;
 
   beforeEach(async () => {
     driver = new MemorySqliteDriver();
@@ -43,6 +47,7 @@ describe('Local DB: SQLite Schema & Repositories', () => {
     outboxRepo = new SqliteOutboxRepository(driver);
     budgetRepo = new SqliteBudgetRepository(driver);
     goalRepo = new SqliteGoalRepository(driver);
+    wealthRepo = new SqliteWealthRepository(driver);
   });
 
   it('runs migrations and seeds builtin categories', async () => {
@@ -750,4 +755,443 @@ describe('Local DB: SQLite Schema & Repositories', () => {
       expect(all.find((g) => g.id === 'goal-del')).toBeUndefined();
     });
   });
+
+  describe('SqliteWealthRepository', () => {
+    describe('Investments (FD, Stocks, Mutual Funds, Gold)', () => {
+      it('creates and saves investments of various types (FD, Stocks, Mutual Funds, Gold)', async () => {
+        const fd: Investment = {
+          id: 'inv-fd-1',
+          name: 'HDFC Fixed Deposit 1Y',
+          type: 'fd',
+          investedAmountMinor: 10000000, // ₹1,00,000
+          currentValueMinor: 10700000, // ₹1,07,000
+          currency: 'INR',
+          notes: '7.0% interest p.a.',
+          createdAt: '2026-09-01T00:00:00.000Z',
+          updatedAt: '2026-09-01T00:00:00.000Z',
+        };
+
+        const stock: Investment = {
+          id: 'inv-stock-1',
+          name: 'Reliance Industries Ltd',
+          type: 'stock',
+          investedAmountMinor: 5000000, // ₹50,000
+          currentValueMinor: 5850000, // ₹58,500
+          currency: 'INR',
+          notes: '20 shares @ ₹2,500',
+          createdAt: '2026-09-02T00:00:00.000Z',
+          updatedAt: '2026-09-02T00:00:00.000Z',
+        };
+
+        const mutualFund: Investment = {
+          id: 'inv-mf-1',
+          name: 'Parag Parikh Flexi Cap Fund',
+          type: 'mutual_fund',
+          investedAmountMinor: 15000000, // ₹1,50,000
+          currentValueMinor: 18200000, // ₹1,82,000
+          currency: 'INR',
+          notes: 'Monthly SIP',
+          createdAt: '2026-09-03T00:00:00.000Z',
+          updatedAt: '2026-09-03T00:00:00.000Z',
+        };
+
+        const gold: Investment = {
+          id: 'inv-gold-1',
+          name: 'Sovereign Gold Bond 2026',
+          type: 'gold',
+          investedAmountMinor: 6500000, // ₹65,000
+          currentValueMinor: 7400000, // ₹74,000
+          currency: 'INR',
+          notes: '10g digital gold equivalent',
+          createdAt: '2026-09-04T00:00:00.000Z',
+          updatedAt: '2026-09-04T00:00:00.000Z',
+        };
+
+        await wealthRepo.saveInvestment(fd);
+        await wealthRepo.saveInvestment(stock);
+        await wealthRepo.saveInvestment(mutualFund);
+        await wealthRepo.saveInvestment(gold);
+
+        const fetchedFd = await wealthRepo.findInvestmentById('inv-fd-1');
+        expect(fetchedFd).toEqual(fd);
+        expect(fetchedFd?.type).toBe('fd');
+        expect(fetchedFd?.investedAmountMinor).toBe(10000000);
+        expect(fetchedFd?.currentValueMinor).toBe(10700000);
+
+        const fetchedStock = await wealthRepo.findInvestmentById('inv-stock-1');
+        expect(fetchedStock).toEqual(stock);
+        expect(fetchedStock?.type).toBe('stock');
+
+        const fetchedMf = await wealthRepo.findInvestmentById('inv-mf-1');
+        expect(fetchedMf).toEqual(mutualFund);
+        expect(fetchedMf?.type).toBe('mutual_fund');
+
+        const fetchedGold = await wealthRepo.findInvestmentById('inv-gold-1');
+        expect(fetchedGold).toEqual(gold);
+        expect(fetchedGold?.type).toBe('gold');
+      });
+
+      it('queries investments ordered by created_at DESC and returns null for non-existent ID', async () => {
+        const inv1: Investment = {
+          id: 'inv-early',
+          name: 'Early PPF',
+          type: 'ppf',
+          investedAmountMinor: 5000000,
+          currentValueMinor: 5500000,
+          currency: 'INR',
+          notes: null,
+          createdAt: '2026-09-01T10:00:00.000Z',
+          updatedAt: '2026-09-01T10:00:00.000Z',
+        };
+
+        const inv2: Investment = {
+          id: 'inv-later',
+          name: 'NPS Tier 1',
+          type: 'nps',
+          investedAmountMinor: 10000000,
+          currentValueMinor: 11200000,
+          currency: 'INR',
+          notes: null,
+          createdAt: '2026-09-05T10:00:00.000Z',
+          updatedAt: '2026-09-05T10:00:00.000Z',
+        };
+
+        await wealthRepo.saveInvestment(inv1);
+        await wealthRepo.saveInvestment(inv2);
+
+        const all = await wealthRepo.getInvestments();
+        expect(all).toHaveLength(2);
+        expect(all[0]?.id).toBe('inv-later');
+        expect(all[1]?.id).toBe('inv-early');
+
+        const notFound = await wealthRepo.findInvestmentById('inv-does-not-exist');
+        expect(notFound).toBeNull();
+      });
+
+      it('updates existing investment without creating duplicates', async () => {
+        const stock: Investment = {
+          id: 'inv-tcs',
+          name: 'TCS Shares',
+          type: 'stock',
+          investedAmountMinor: 4000000, // ₹40,000
+          currentValueMinor: 4200000, // ₹42,000
+          currency: 'INR',
+          notes: '10 shares',
+          createdAt: '2026-09-01T00:00:00.000Z',
+          updatedAt: '2026-09-01T00:00:00.000Z',
+        };
+
+        await wealthRepo.saveInvestment(stock);
+
+        // Update current valuation and notes
+        const updated: Investment = {
+          ...stock,
+          currentValueMinor: 4800000, // Gain to ₹48,000
+          notes: 'Q2 earnings rally',
+          updatedAt: '2026-09-06T15:00:00.000Z',
+        };
+
+        await wealthRepo.saveInvestment(updated);
+
+        const fetched = await wealthRepo.findInvestmentById('inv-tcs');
+        expect(fetched).not.toBeNull();
+        expect(fetched?.currentValueMinor).toBe(4800000);
+        expect(fetched?.notes).toBe('Q2 earnings rally');
+        expect(fetched?.updatedAt).toBe('2026-09-06T15:00:00.000Z');
+
+        const all = await wealthRepo.getInvestments();
+        expect(all).toHaveLength(1);
+      });
+
+      it('deletes an investment by ID', async () => {
+        const inv: Investment = {
+          id: 'inv-del-1',
+          name: 'Closed FD',
+          type: 'fd',
+          investedAmountMinor: 2000000,
+          currentValueMinor: 2100000,
+          currency: 'INR',
+          notes: null,
+          createdAt: '2026-09-01T00:00:00.000Z',
+          updatedAt: '2026-09-01T00:00:00.000Z',
+        };
+
+        await wealthRepo.saveInvestment(inv);
+        expect(await wealthRepo.findInvestmentById('inv-del-1')).not.toBeNull();
+
+        await wealthRepo.deleteInvestment('inv-del-1');
+        expect(await wealthRepo.findInvestmentById('inv-del-1')).toBeNull();
+
+        const all = await wealthRepo.getInvestments();
+        expect(all.find((i) => i.id === 'inv-del-1')).toBeUndefined();
+      });
+    });
+
+    describe('Liabilities (Loans, Credit Cards, EMIs)', () => {
+      it('creates and saves liabilities of various types (Loans, Credit Cards, EMIs)', async () => {
+        const homeLoan: Liability = {
+          id: 'liab-loan-1',
+          name: 'SBI Home Loan',
+          type: 'loan',
+          principalAmountMinor: 450000000, // ₹45,00,000
+          remainingAmountMinor: 412500000, // ₹41,25,000
+          currency: 'INR',
+          interestRatePercent: 8.5,
+          dueDate: '2046-03-31',
+          notes: '20-year floating tenure',
+          createdAt: '2026-09-01T00:00:00.000Z',
+          updatedAt: '2026-09-01T00:00:00.000Z',
+        };
+
+        const creditCard: Liability = {
+          id: 'liab-cc-1',
+          name: 'HDFC Regalia Credit Card',
+          type: 'credit_card',
+          principalAmountMinor: 7500000, // ₹75,000
+          remainingAmountMinor: 4200000, // ₹42,000
+          currency: 'INR',
+          interestRatePercent: 42.0,
+          dueDate: '2026-09-20',
+          notes: 'Billing cycle ends 5th',
+          createdAt: '2026-09-02T00:00:00.000Z',
+          updatedAt: '2026-09-02T00:00:00.000Z',
+        };
+
+        const emi: Liability = {
+          id: 'liab-emi-1',
+          name: 'MacBook No-Cost EMI',
+          type: 'emi',
+          principalAmountMinor: 12000000, // ₹1,20,000
+          remainingAmountMinor: 6000000, // ₹60,000
+          currency: 'INR',
+          interestRatePercent: 0,
+          dueDate: '2027-03-05',
+          notes: '6 of 12 installments remaining',
+          createdAt: '2026-09-03T00:00:00.000Z',
+          updatedAt: '2026-09-03T00:00:00.000Z',
+        };
+
+        await wealthRepo.saveLiability(homeLoan);
+        await wealthRepo.saveLiability(creditCard);
+        await wealthRepo.saveLiability(emi);
+
+        const fetchedLoan = await wealthRepo.findLiabilityById('liab-loan-1');
+        expect(fetchedLoan).toEqual(homeLoan);
+        expect(fetchedLoan?.type).toBe('loan');
+        expect(fetchedLoan?.principalAmountMinor).toBe(450000000);
+        expect(fetchedLoan?.remainingAmountMinor).toBe(412500000);
+        expect(fetchedLoan?.interestRatePercent).toBe(8.5);
+
+        const fetchedCc = await wealthRepo.findLiabilityById('liab-cc-1');
+        expect(fetchedCc).toEqual(creditCard);
+        expect(fetchedCc?.type).toBe('credit_card');
+        expect(fetchedCc?.interestRatePercent).toBe(42.0);
+
+        const fetchedEmi = await wealthRepo.findLiabilityById('liab-emi-1');
+        expect(fetchedEmi).toEqual(emi);
+        expect(fetchedEmi?.type).toBe('emi');
+        expect(fetchedEmi?.interestRatePercent).toBe(0);
+      });
+
+      it('queries liabilities ordered by created_at DESC and returns null for non-existent ID', async () => {
+        const l1: Liability = {
+          id: 'liab-first',
+          name: 'Personal Loan',
+          type: 'loan',
+          principalAmountMinor: 5000000,
+          remainingAmountMinor: 3000000,
+          currency: 'INR',
+          interestRatePercent: 12.5,
+          dueDate: null,
+          notes: null,
+          createdAt: '2026-09-01T08:00:00.000Z',
+          updatedAt: '2026-09-01T08:00:00.000Z',
+        };
+
+        const l2: Liability = {
+          id: 'liab-second',
+          name: 'BNPL Purchase',
+          type: 'bnpl',
+          principalAmountMinor: 1500000,
+          remainingAmountMinor: 500000,
+          currency: 'INR',
+          interestRatePercent: 0,
+          dueDate: '2026-09-30',
+          notes: null,
+          createdAt: '2026-09-05T08:00:00.000Z',
+          updatedAt: '2026-09-05T08:00:00.000Z',
+        };
+
+        await wealthRepo.saveLiability(l1);
+        await wealthRepo.saveLiability(l2);
+
+        const all = await wealthRepo.getLiabilities();
+        expect(all).toHaveLength(2);
+        expect(all[0]?.id).toBe('liab-second');
+        expect(all[1]?.id).toBe('liab-first');
+
+        const notFound = await wealthRepo.findLiabilityById('liab-non-existent');
+        expect(notFound).toBeNull();
+      });
+
+      it('updates existing liability details and repayment balance', async () => {
+        const loan: Liability = {
+          id: 'liab-car',
+          name: 'Auto Loan',
+          type: 'loan',
+          principalAmountMinor: 80000000, // ₹8,00,000
+          remainingAmountMinor: 60000000, // ₹6,00,000
+          currency: 'INR',
+          interestRatePercent: 9.0,
+          dueDate: '2029-12-31',
+          notes: 'Prepayment allowed',
+          createdAt: '2026-09-01T00:00:00.000Z',
+          updatedAt: '2026-09-01T00:00:00.000Z',
+        };
+
+        await wealthRepo.saveLiability(loan);
+
+        // Prepayment made: remaining amount decreased to ₹4,00,000, rate lowered to 8.75%
+        const updated: Liability = {
+          ...loan,
+          remainingAmountMinor: 40000000,
+          interestRatePercent: 8.75,
+          notes: 'Prepayment ₹2,00,000 made on Sept 6',
+          updatedAt: '2026-09-06T12:00:00.000Z',
+        };
+
+        await wealthRepo.saveLiability(updated);
+
+        const fetched = await wealthRepo.findLiabilityById('liab-car');
+        expect(fetched).not.toBeNull();
+        expect(fetched?.remainingAmountMinor).toBe(40000000);
+        expect(fetched?.interestRatePercent).toBe(8.75);
+        expect(fetched?.notes).toBe('Prepayment ₹2,00,000 made on Sept 6');
+        expect(fetched?.updatedAt).toBe('2026-09-06T12:00:00.000Z');
+
+        const all = await wealthRepo.getLiabilities();
+        expect(all).toHaveLength(1);
+      });
+
+      it('deletes a liability by ID', async () => {
+        const cc: Liability = {
+          id: 'liab-del-cc',
+          name: 'Closed Card',
+          type: 'credit_card',
+          principalAmountMinor: 1000000,
+          remainingAmountMinor: 0,
+          currency: 'INR',
+          interestRatePercent: 36.0,
+          dueDate: null,
+          notes: 'Paid off and closed',
+          createdAt: '2026-09-01T00:00:00.000Z',
+          updatedAt: '2026-09-01T00:00:00.000Z',
+        };
+
+        await wealthRepo.saveLiability(cc);
+        expect(await wealthRepo.findLiabilityById('liab-del-cc')).not.toBeNull();
+
+        await wealthRepo.deleteLiability('liab-del-cc');
+        expect(await wealthRepo.findLiabilityById('liab-del-cc')).toBeNull();
+
+        const all = await wealthRepo.getLiabilities();
+        expect(all.find((l) => l.id === 'liab-del-cc')).toBeUndefined();
+      });
+    });
+
+    describe('Transactions & Offline Persistence', () => {
+      it('supports atomic SQLite transactions with clean rollback on error', async () => {
+        const inv: Investment = {
+          id: 'tx-inv-roll',
+          name: 'Rolled Back Investment',
+          type: 'fd',
+          investedAmountMinor: 1000000,
+          currentValueMinor: 1000000,
+          currency: 'INR',
+          notes: null,
+          createdAt: '2026-09-01T00:00:00.000Z',
+          updatedAt: '2026-09-01T00:00:00.000Z',
+        };
+
+        const liab: Liability = {
+          id: 'tx-liab-roll',
+          name: 'Rolled Back Liability',
+          type: 'loan',
+          principalAmountMinor: 2000000,
+          remainingAmountMinor: 2000000,
+          currency: 'INR',
+          interestRatePercent: 10,
+          dueDate: null,
+          notes: null,
+          createdAt: '2026-09-01T00:00:00.000Z',
+          updatedAt: '2026-09-01T00:00:00.000Z',
+        };
+
+        // Begin transaction, execute writes, then rollback
+        await driver.exec('BEGIN TRANSACTION');
+        await wealthRepo.saveInvestment(inv);
+        await wealthRepo.saveLiability(liab);
+        await driver.exec('ROLLBACK');
+
+        // Verify neither record was committed
+        expect(await wealthRepo.findInvestmentById('tx-inv-roll')).toBeNull();
+        expect(await wealthRepo.findLiabilityById('tx-liab-roll')).toBeNull();
+
+        // Successful transaction commit
+        await driver.exec('BEGIN TRANSACTION');
+        await wealthRepo.saveInvestment(inv);
+        await wealthRepo.saveLiability(liab);
+        await driver.exec('COMMIT');
+
+        // Verify both records committed
+        expect(await wealthRepo.findInvestmentById('tx-inv-roll')).not.toBeNull();
+        expect(await wealthRepo.findLiabilityById('tx-liab-roll')).not.toBeNull();
+      });
+
+      it('persists investments and liabilities 100% offline and preserves integer minor units', async () => {
+        const highPrecisionInv: Investment = {
+          id: 'inv-offline-large',
+          name: 'Large Tech Holdings',
+          type: 'stock',
+          investedAmountMinor: 1234567890, // ₹1,23,45,678.90
+          currentValueMinor: 2345678901,  // ₹2,34,56,789.01
+          currency: 'INR',
+          notes: 'High value offline portfolio test',
+          createdAt: '2026-09-01T00:00:00.000Z',
+          updatedAt: '2026-09-01T00:00:00.000Z',
+        };
+
+        const highPrecisionLiab: Liability = {
+          id: 'liab-offline-large',
+          name: 'Commercial Mortgage',
+          type: 'loan',
+          principalAmountMinor: 9876543210, // ₹9,87,65,432.10
+          remainingAmountMinor: 8765432109, // ₹8,76,54,321.09
+          currency: 'INR',
+          interestRatePercent: 7.85,
+          dueDate: '2040-01-01',
+          notes: 'Exact integer minor units test',
+          createdAt: '2026-09-01T00:00:00.000Z',
+          updatedAt: '2026-09-01T00:00:00.000Z',
+        };
+
+        await wealthRepo.saveInvestment(highPrecisionInv);
+        await wealthRepo.saveLiability(highPrecisionLiab);
+
+        const fetchedInv = await wealthRepo.findInvestmentById('inv-offline-large');
+        expect(fetchedInv?.investedAmountMinor).toBe(1234567890);
+        expect(fetchedInv?.currentValueMinor).toBe(2345678901);
+        expect(Number.isInteger(fetchedInv?.investedAmountMinor)).toBe(true);
+        expect(Number.isInteger(fetchedInv?.currentValueMinor)).toBe(true);
+
+        const fetchedLiab = await wealthRepo.findLiabilityById('liab-offline-large');
+        expect(fetchedLiab?.principalAmountMinor).toBe(9876543210);
+        expect(fetchedLiab?.remainingAmountMinor).toBe(8765432109);
+        expect(fetchedLiab?.interestRatePercent).toBe(7.85);
+        expect(Number.isInteger(fetchedLiab?.principalAmountMinor)).toBe(true);
+        expect(Number.isInteger(fetchedLiab?.remainingAmountMinor)).toBe(true);
+      });
+    });
+  });
 });
+

@@ -6,6 +6,8 @@ import type {
   Transaction,
   Budget,
   Goal,
+  Investment,
+  Liability,
   Group,
   GroupMember,
   GroupExpense,
@@ -24,6 +26,10 @@ import {
   type SimplifiedTransfer,
   type MemberSettlementExplanation,
   type DependencyGraph,
+  type WealthSummary,
+  type InvestmentAnalytics,
+  type LiabilityAnalytics,
+  type HistoricalNetWorthPoint,
 } from '@biyong/domain';
 import type { AccountWithDerivedBalance } from '@biyong/application';
 import {
@@ -131,6 +137,14 @@ export interface LedgerContextValue {
   netWorthMinor: number;
   stats: DatabaseStats;
 
+  // Wealth, Investments & Liabilities
+  investments: Investment[];
+  liabilities: Liability[];
+  wealthSummary: WealthSummary | null;
+  investmentAnalytics: InvestmentAnalytics | null;
+  liabilityAnalytics: LiabilityAnalytics | null;
+  historicalNetWorth: HistoricalNetWorthPoint[];
+
   // Groups & Splits
   groups: Group[];
   activeGroupId: string | null;
@@ -169,6 +183,19 @@ export interface LedgerContextValue {
   }) => Promise<void>;
   contributeToGoal: (goalId: string, amountMinor: number) => Promise<void>;
   deleteGoal: (id: string) => Promise<void>;
+
+  // Wealth actions
+  createInvestment: (
+    data: Omit<Investment, 'id' | 'createdAt' | 'updatedAt'>
+  ) => Promise<Investment>;
+  updateInvestment: (data: Investment) => Promise<void>;
+  deleteInvestment: (id: string) => Promise<void>;
+  createLiability: (
+    data: Omit<Liability, 'id' | 'createdAt' | 'updatedAt'>
+  ) => Promise<Liability>;
+  updateLiability: (data: Liability) => Promise<void>;
+  deleteLiability: (id: string) => Promise<void>;
+  payLiability: (id: string, amountMinor: number) => Promise<void>;
 
   // Group actions
   createGroup: (
@@ -261,6 +288,15 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [fixedVsVariable, setFixedVsVariable] = useState<FixedVsVariableSpending | null>(null);
   const [spendingTrends, setSpendingTrends] = useState<SpendingTrendItem[]>([]);
   const [netWorthMinor, setNetWorthMinor] = useState<number>(0);
+
+  // Wealth, Investments & Liabilities state
+  const [investments, setInvestments] = useState<Investment[]>([]);
+  const [liabilities, setLiabilities] = useState<Liability[]>([]);
+  const [wealthSummary, setWealthSummary] = useState<WealthSummary | null>(null);
+  const [investmentAnalytics, setInvestmentAnalytics] = useState<InvestmentAnalytics | null>(null);
+  const [liabilityAnalytics, setLiabilityAnalytics] = useState<LiabilityAnalytics | null>(null);
+  const [historicalNetWorth, setHistoricalNetWorth] = useState<HistoricalNetWorthPoint[]>([]);
+
   const [stats, setStats] = useState<DatabaseStats>({
     accountsCount: 0,
     transactionsCount: 0,
@@ -306,17 +342,37 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const refreshLedger = useCallback(async () => {
     if (!services) return;
     try {
-      const [accsWithBalances, txList, catList, budgetList, goalList, fixedVar, trends, groupList] =
-        await Promise.all([
-          services.accountUseCases.listAccountsWithDerivedBalances(true),
-          services.txRepo.findAll(),
-          services.categoryUseCases.listCategories(),
-          services.budgetUseCases.listBudgetsWithStatus(),
-          services.goalUseCases.listGoalsWithProgress(),
-          services.analyticsUseCases.getFixedVsVariable(),
-          services.analyticsUseCases.getSpendingTrends(6),
-          services.groupUseCases.listGroups(),
-        ]);
+      const [
+        accsWithBalances,
+        txList,
+        catList,
+        budgetList,
+        goalList,
+        fixedVar,
+        trends,
+        groupList,
+        wSummary,
+        invList,
+        liabList,
+        invAnalytics,
+        liabAnalytics,
+        histNetWorth,
+      ] = await Promise.all([
+        services.accountUseCases.listAccountsWithDerivedBalances(true),
+        services.txRepo.findAll(),
+        services.categoryUseCases.listCategories(),
+        services.budgetUseCases.listBudgetsWithStatus(),
+        services.goalUseCases.listGoalsWithProgress(),
+        services.analyticsUseCases.getFixedVsVariable(),
+        services.analyticsUseCases.getSpendingTrends(6),
+        services.groupUseCases.listGroups(),
+        services.wealthUseCases.getNetWorthSummary(),
+        services.wealthUseCases.listInvestments(),
+        services.wealthUseCases.listLiabilities(),
+        services.wealthUseCases.getInvestmentAnalytics(),
+        services.wealthUseCases.getLiabilityAnalytics(),
+        services.wealthUseCases.getHistoricalNetWorth(6),
+      ]);
 
       setAccounts(accsWithBalances);
       setTransactions(txList);
@@ -326,11 +382,13 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setFixedVsVariable(fixedVar);
       setSpendingTrends(trends);
       setGroups(groupList);
-
-      const net = accsWithBalances
-        .filter((a) => !a.isArchived)
-        .reduce((sum, a) => sum + a.derivedBalanceMinor, 0);
-      setNetWorthMinor(net);
+      setWealthSummary(wSummary);
+      setInvestments(invList);
+      setLiabilities(liabList);
+      setInvestmentAnalytics(invAnalytics);
+      setLiabilityAnalytics(liabAnalytics);
+      setHistoricalNetWorth(histNetWorth);
+      setNetWorthMinor(wSummary.netWorthMinor);
 
       setStats({
         accountsCount: accsWithBalances.length,
@@ -360,17 +418,37 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         const s = await initDatabase();
         setServices(s);
 
-        const [accsWithBalances, txList, catList, budgetList, goalList, fixedVar, trends, groupList] =
-          await Promise.all([
-            s.accountUseCases.listAccountsWithDerivedBalances(true),
-            s.txRepo.findAll(),
-            s.categoryUseCases.listCategories(),
-            s.budgetUseCases.listBudgetsWithStatus(),
-            s.goalUseCases.listGoalsWithProgress(),
-            s.analyticsUseCases.getFixedVsVariable(),
-            s.analyticsUseCases.getSpendingTrends(6),
-            s.groupUseCases.listGroups(),
-          ]);
+        const [
+          accsWithBalances,
+          txList,
+          catList,
+          budgetList,
+          goalList,
+          fixedVar,
+          trends,
+          groupList,
+          wSummary,
+          invList,
+          liabList,
+          invAnalytics,
+          liabAnalytics,
+          histNetWorth,
+        ] = await Promise.all([
+          s.accountUseCases.listAccountsWithDerivedBalances(true),
+          s.txRepo.findAll(),
+          s.categoryUseCases.listCategories(),
+          s.budgetUseCases.listBudgetsWithStatus(),
+          s.goalUseCases.listGoalsWithProgress(),
+          s.analyticsUseCases.getFixedVsVariable(),
+          s.analyticsUseCases.getSpendingTrends(6),
+          s.groupUseCases.listGroups(),
+          s.wealthUseCases.getNetWorthSummary(),
+          s.wealthUseCases.listInvestments(),
+          s.wealthUseCases.listLiabilities(),
+          s.wealthUseCases.getInvestmentAnalytics(),
+          s.wealthUseCases.getLiabilityAnalytics(),
+          s.wealthUseCases.getHistoricalNetWorth(6),
+        ]);
 
         setAccounts(accsWithBalances);
         setTransactions(txList);
@@ -380,11 +458,13 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setFixedVsVariable(fixedVar);
         setSpendingTrends(trends);
         setGroups(groupList);
-
-        const net = accsWithBalances
-          .filter((a) => !a.isArchived)
-          .reduce((sum, a) => sum + a.derivedBalanceMinor, 0);
-        setNetWorthMinor(net);
+        setWealthSummary(wSummary);
+        setInvestments(invList);
+        setLiabilities(liabList);
+        setInvestmentAnalytics(invAnalytics);
+        setLiabilityAnalytics(liabAnalytics);
+        setHistoricalNetWorth(histNetWorth);
+        setNetWorthMinor(wSummary.netWorthMinor);
 
         setStats({
           accountsCount: accsWithBalances.length,
@@ -672,6 +752,163 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         entityId: id,
         operationType: 'delete',
         payload: { id },
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
+      await refreshLedger();
+    },
+    [services, refreshLedger]
+  );
+
+  const createInvestment = useCallback(
+    async (data: Omit<Investment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Investment> => {
+      if (!services) throw new Error('Database not ready');
+      const now = new Date().toISOString();
+      const newInv: Investment = {
+        ...data,
+        id: generateId('inv'),
+        createdAt: now,
+        updatedAt: now,
+      };
+      await services.wealthUseCases.createInvestment(newInv);
+      const op = createSyncOperation({
+        entityType: 'investment',
+        entityId: newInv.id,
+        operationType: 'create',
+        payload: newInv as unknown as Record<string, unknown>,
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
+      await refreshLedger();
+      return newInv;
+    },
+    [services, refreshLedger]
+  );
+
+  const updateInvestment = useCallback(
+    async (data: Investment): Promise<void> => {
+      if (!services) throw new Error('Database not ready');
+      const updated: Investment = {
+        ...data,
+        updatedAt: new Date().toISOString(),
+      };
+      await services.wealthUseCases.updateInvestment(updated);
+      const op = createSyncOperation({
+        entityType: 'investment',
+        entityId: updated.id,
+        operationType: 'update',
+        payload: updated as unknown as Record<string, unknown>,
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
+      await refreshLedger();
+    },
+    [services, refreshLedger]
+  );
+
+  const deleteInvestment = useCallback(
+    async (id: string): Promise<void> => {
+      if (!services) throw new Error('Database not ready');
+      await services.wealthUseCases.deleteInvestment(id);
+      const op = createSyncOperation({
+        entityType: 'investment',
+        entityId: id,
+        operationType: 'delete',
+        payload: { id },
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
+      await refreshLedger();
+    },
+    [services, refreshLedger]
+  );
+
+  const createLiability = useCallback(
+    async (data: Omit<Liability, 'id' | 'createdAt' | 'updatedAt'>): Promise<Liability> => {
+      if (!services) throw new Error('Database not ready');
+      const now = new Date().toISOString();
+      const newLiab: Liability = {
+        ...data,
+        id: generateId('liab'),
+        createdAt: now,
+        updatedAt: now,
+      };
+      await services.wealthUseCases.createLiability(newLiab);
+      const op = createSyncOperation({
+        entityType: 'liability',
+        entityId: newLiab.id,
+        operationType: 'create',
+        payload: newLiab as unknown as Record<string, unknown>,
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
+      await refreshLedger();
+      return newLiab;
+    },
+    [services, refreshLedger]
+  );
+
+  const updateLiability = useCallback(
+    async (data: Liability): Promise<void> => {
+      if (!services) throw new Error('Database not ready');
+      const updated: Liability = {
+        ...data,
+        updatedAt: new Date().toISOString(),
+      };
+      await services.wealthUseCases.updateLiability(updated);
+      const op = createSyncOperation({
+        entityType: 'liability',
+        entityId: updated.id,
+        operationType: 'update',
+        payload: updated as unknown as Record<string, unknown>,
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
+      await refreshLedger();
+    },
+    [services, refreshLedger]
+  );
+
+  const deleteLiability = useCallback(
+    async (id: string): Promise<void> => {
+      if (!services) throw new Error('Database not ready');
+      await services.wealthUseCases.deleteLiability(id);
+      const op = createSyncOperation({
+        entityType: 'liability',
+        entityId: id,
+        operationType: 'delete',
+        payload: { id },
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
+      await refreshLedger();
+    },
+    [services, refreshLedger]
+  );
+
+  const payLiability = useCallback(
+    async (id: string, amountMinor: number): Promise<void> => {
+      if (!services) throw new Error('Database not ready');
+      const updated = await services.wealthUseCases.payLiability(id, amountMinor);
+      const op = createSyncOperation({
+        entityType: 'liability',
+        entityId: updated.id,
+        operationType: 'update',
+        payload: updated as unknown as Record<string, unknown>,
         deviceId: deviceIdRef.current || 'device_default',
       });
       await services.outboxRepo.enqueue(op);
@@ -994,6 +1231,106 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       updatedAt: new Date().toISOString(),
     });
 
+    // Seed Investments & Liabilities
+    await services.driver.exec('DELETE FROM investments');
+    await services.driver.exec('DELETE FROM liabilities');
+
+    const sampleInvestments: Omit<Investment, 'id' | 'createdAt' | 'updatedAt'>[] = [
+      {
+        name: 'Nifty 50 Index Fund',
+        type: 'mutual_fund',
+        investedAmountMinor: 15000000, // ₹1,50,000
+        currentValueMinor: 17850000,   // ₹1,78,500
+        currency: 'INR',
+        notes: 'Monthly SIP via UTI AMC',
+      },
+      {
+        name: 'HDFC 1-Year FD',
+        type: 'fd',
+        investedAmountMinor: 10000000, // ₹1,00,000
+        currentValueMinor: 10710000,   // ₹1,07,100
+        currency: 'INR',
+        notes: 'Fixed return at 7.1%',
+      },
+      {
+        name: 'Sovereign Gold Bond 24K',
+        type: 'gold',
+        investedAmountMinor: 8000000,  // ₹80,000
+        currentValueMinor: 9800000,    // ₹98,000
+        currency: 'INR',
+        notes: 'Tranche 2023-24 Series II',
+      },
+      {
+        name: 'National Pension Scheme (NPS)',
+        type: 'nps',
+        investedAmountMinor: 12000000, // ₹1,20,000
+        currentValueMinor: 13900000,   // ₹1,39,000
+        currency: 'INR',
+        notes: 'Tier 1 Auto Choice (LC50)',
+      },
+      {
+        name: 'Tata Motors Shares',
+        type: 'stock',
+        investedAmountMinor: 5000000,  // ₹50,000
+        currentValueMinor: 6420000,    // ₹64,200
+        currency: 'INR',
+        notes: 'Long-term equity allocation',
+      },
+    ];
+
+    for (const inv of sampleInvestments) {
+      const invDate = new Date(now.getFullYear(), now.getMonth() - 2, 10).toISOString();
+      await services.wealthUseCases.createInvestment({
+        ...inv,
+        id: generateId('inv_demo'),
+        createdAt: invDate,
+        updatedAt: invDate,
+      });
+    }
+
+    const sampleLiabilities: Omit<Liability, 'id' | 'createdAt' | 'updatedAt'>[] = [
+      {
+        name: 'Home Loan - HDFC',
+        type: 'loan',
+        principalAmountMinor: 250000000, // ₹25,00,000
+        remainingAmountMinor: 184500000, // ₹18,45,000
+        currency: 'INR',
+        interestRatePercent: 8.5,
+        dueDate: `${year}-${month}-05`,
+        notes: 'EMI auto-debit on 5th of each month',
+      },
+      {
+        name: 'SBI Credit Card',
+        type: 'credit_card',
+        principalAmountMinor: 4500000,  // ₹45,000
+        remainingAmountMinor: 2450000,  // ₹24,500
+        currency: 'INR',
+        interestRatePercent: 0,
+        dueDate: `${year}-${month}-20`,
+        notes: 'Statement balance due this month',
+      },
+      {
+        name: 'MacBook Pro EMI',
+        type: 'emi',
+        principalAmountMinor: 12000000, // ₹1,20,000
+        remainingAmountMinor: 4000000,  // ₹40,000
+        currency: 'INR',
+        interestRatePercent: 0,
+        dueDate: `${year}-${month}-15`,
+        notes: 'No cost EMI, 6 of 9 instalments completed',
+      },
+    ];
+
+    for (const liab of sampleLiabilities) {
+      const liabDate = new Date(now.getFullYear(), now.getMonth() - 3, 5).toISOString();
+      await services.wealthUseCases.createLiability({
+        ...liab,
+        id: generateId('liab_demo'),
+        createdAt: liabDate,
+        updatedAt: liabDate,
+      });
+    }
+
     await refreshLedger();
   }, [services, refreshLedger]);
 
@@ -1003,6 +1340,8 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     await services.driver.exec('DELETE FROM accounts');
     await services.driver.exec('DELETE FROM budgets');
     await services.driver.exec('DELETE FROM goals');
+    await services.driver.exec('DELETE FROM investments');
+    await services.driver.exec('DELETE FROM liabilities');
     await services.driver.exec('DELETE FROM settlements');
     await services.driver.exec('DELETE FROM group_expenses');
     await services.driver.exec('DELETE FROM group_members');
@@ -1959,6 +2298,12 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       spendingTrends,
       netWorthMinor,
       stats,
+      investments,
+      liabilities,
+      wealthSummary,
+      investmentAnalytics,
+      liabilityAnalytics,
+      historicalNetWorth,
       groups,
       activeGroupId,
       activeGroup,
@@ -1978,6 +2323,13 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       createGoal,
       contributeToGoal,
       deleteGoal,
+      createInvestment,
+      updateInvestment,
+      deleteInvestment,
+      createLiability,
+      updateLiability,
+      deleteLiability,
+      payLiability,
       createGroup,
       joinGroup,
       createGroupInvite,
@@ -2033,6 +2385,12 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       spendingTrends,
       netWorthMinor,
       stats,
+      investments,
+      liabilities,
+      wealthSummary,
+      investmentAnalytics,
+      liabilityAnalytics,
+      historicalNetWorth,
       groups,
       activeGroupId,
       activeGroup,
@@ -2052,6 +2410,13 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       createGoal,
       contributeToGoal,
       deleteGoal,
+      createInvestment,
+      updateInvestment,
+      deleteInvestment,
+      createLiability,
+      updateLiability,
+      deleteLiability,
+      payLiability,
       createGroup,
       joinGroup,
       createGroupInvite,
