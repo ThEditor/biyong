@@ -75,4 +75,12 @@ export class SqliteAccountRepository implements AccountRepository {
   async delete(id: string): Promise<void> {
     await this.driver.run('DELETE FROM accounts WHERE id = ?', [id]);
   }
+
+  async archive(id: string): Promise<void> {
+    const updatedAt = new Date().toISOString();
+    await this.driver.run(
+      'UPDATE accounts SET is_archived = 1, updated_at = ? WHERE id = ?',
+      [updatedAt, id]
+    );
+  }
 }

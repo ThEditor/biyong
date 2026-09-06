@@ -1,6 +1,7 @@
 export * from './driver.js';
 export * from './migrations.js';
 export * from './repositories/account-repository.js';
+export * from './repositories/category-repository.js';
 export * from './repositories/transaction-repository.js';
 export * from './repositories/group-repository.js';
 export * from './repositories/budget-repository.js';

@@ -1,5 +1,6 @@
 import type { Transaction } from '@biyong/schemas';
 import type { TransactionRepository } from '@biyong/application';
+import type { TransactionFilter } from '@biyong/domain';
 import type { SqliteDriver } from '../driver.js';
 
 interface TxRow {
@@ -95,6 +96,51 @@ export class SqliteTransactionRepository implements TransactionRepository {
     const rows = await this.driver.query<TxRow>(
       'SELECT * FROM transactions ORDER BY date DESC, created_at DESC'
     );
+    return rows.map(mapRow);
+  }
+
+  async findByFilter(filter: TransactionFilter): Promise<Transaction[]> {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (filter.accountId !== undefined) {
+      conditions.push('(account_id = ? OR to_account_id = ?)');
+      params.push(filter.accountId, filter.accountId);
+    }
+
+    if (filter.categoryId !== undefined) {
+      conditions.push('category_id = ?');
+      params.push(filter.categoryId);
+    }
+
+    if (filter.type !== undefined) {
+      conditions.push('type = ?');
+      params.push(filter.type);
+    }
+
+    if (filter.startDate !== undefined) {
+      conditions.push('date >= ?');
+      params.push(filter.startDate);
+    }
+
+    if (filter.endDate !== undefined) {
+      conditions.push('date <= ?');
+      params.push(filter.endDate);
+    }
+
+    if (filter.searchQuery !== undefined && filter.searchQuery.trim().length > 0) {
+      conditions.push('(merchant LIKE ? OR notes LIKE ? OR subcategory LIKE ?)');
+      const pattern = `%${filter.searchQuery.trim()}%`;
+      params.push(pattern, pattern, pattern);
+    }
+
+    let sql = 'SELECT * FROM transactions';
+    if (conditions.length > 0) {
+      sql += ' WHERE ' + conditions.join(' AND ');
+    }
+    sql += ' ORDER BY date DESC, created_at DESC';
+
+    const rows = await this.driver.query<TxRow>(sql, params);
     return rows.map(mapRow);
   }
 

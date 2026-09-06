@@ -12,6 +12,8 @@ import type {
   Liability,
 } from '@biyong/schemas';
 
+import type { TransactionFilter } from '@biyong/domain';
+
 export interface CategoryRepository {
   findAll(): Promise<Category[]>;
   findById(id: string): Promise<Category | null>;
@@ -24,6 +26,7 @@ export interface AccountRepository {
   findAll(): Promise<Account[]>;
   update(account: Account): Promise<void>;
   delete(id: string): Promise<void>;
+  archive?(id: string): Promise<void>;
 }
 
 export interface TransactionRepository {
@@ -34,6 +37,7 @@ export interface TransactionRepository {
   findAll(): Promise<Transaction[]>;
   update(tx: Transaction): Promise<void>;
   delete(id: string): Promise<void>;
+  findByFilter?(filter: TransactionFilter): Promise<Transaction[]>;
 }
 
 export interface GroupRepository {
