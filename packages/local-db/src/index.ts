@@ -8,3 +8,4 @@ export * from './repositories/budget-repository.js';
 export * from './repositories/goal-repository.js';
 export * from './repositories/wealth-repository.js';
 export * from './repositories/outbox-repository.js';
+export * from './repositories/sync-state-repository.js';

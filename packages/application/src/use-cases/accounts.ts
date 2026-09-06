@@ -25,6 +25,10 @@ export class AccountUseCases {
     return this.accountRepo.findById(id);
   }
 
+  async getDerivedAccountBalance(id: string): Promise<number> {
+    return this.txUseCases.getDerivedAccountBalance(id);
+  }
+
   async archiveAccount(id: string): Promise<void> {
     const account = await this.accountRepo.findById(id);
     if (!account) {

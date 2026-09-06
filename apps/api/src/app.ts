@@ -129,9 +129,23 @@ export function createApp() {
   app.get('/sync/pull', (c) => {
     const cursor = c.req.query('cursor');
     const allOps = Array.from(syncedOpsMap.values());
+    let filteredOps = allOps;
+
+    if (cursor) {
+      const cursorTime = new Date(cursor).getTime();
+      if (!isNaN(cursorTime)) {
+        filteredOps = allOps.filter((op) => new Date(op.timestamp).getTime() > cursorTime);
+      }
+    }
+
+    const latestTimestamp =
+      filteredOps.length > 0
+        ? filteredOps[filteredOps.length - 1].timestamp
+        : cursor || new Date().toISOString();
+
     return c.json({
-      operations: allOps,
-      nextCursor: new Date().toISOString(),
+      operations: filteredOps,
+      nextCursor: latestTimestamp,
     });
   });
 

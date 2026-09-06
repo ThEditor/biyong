@@ -272,3 +272,31 @@ export const AuthResponseSchema = z.object({
   expiresAt: z.string().datetime(),
 });
 export type AuthResponse = z.infer<typeof AuthResponseSchema>;
+
+export const DeviceIdentitySchema = z.object({
+  deviceId: z.string().min(1),
+  deviceName: z.string().optional(),
+  platform: z.string().optional(),
+});
+export type DeviceIdentity = z.infer<typeof DeviceIdentitySchema>;
+
+export const SyncPushRequestSchema = z.object({
+  operations: z.array(SyncOperationSchema),
+});
+export type SyncPushRequest = z.infer<typeof SyncPushRequestSchema>;
+
+export const SyncPushResponseSchema = z.object({
+  syncedIds: z.array(z.string()),
+  rejected: z.array(z.object({ id: z.string(), reason: z.string() })),
+});
+export type SyncPushResponse = z.infer<typeof SyncPushResponseSchema>;
+
+export const SyncPullResponseSchema = z.object({
+  operations: z.array(SyncOperationSchema),
+  nextCursor: z.string(),
+});
+export type SyncPullResponse = z.infer<typeof SyncPullResponseSchema>;
+
+export const SyncStatusSchema = z.enum(['idle', 'syncing', 'synced', 'error', 'offline']);
+export type SyncStatus = z.infer<typeof SyncStatusSchema>;
+

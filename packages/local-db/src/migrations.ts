@@ -157,6 +157,12 @@ CREATE TABLE IF NOT EXISTS outbox_operations (
 );
 
 CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox_operations (status);
+
+CREATE TABLE IF NOT EXISTS sync_state (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `;
 
 export const BUILTIN_CATEGORIES = [

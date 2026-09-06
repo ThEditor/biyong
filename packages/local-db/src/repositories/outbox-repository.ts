@@ -61,4 +61,32 @@ export class SqliteOutboxRepository {
       [reason, id]
     );
   }
+
+  async getPendingCount(): Promise<number> {
+    const row = await this.driver.queryOne<{ count: number }>(
+      "SELECT COUNT(*) as count FROM outbox_operations WHERE status = 'pending'"
+    );
+    return row?.count ?? 0;
+  }
+
+  async getAll(): Promise<SyncOperation[]> {
+    const rows = await this.driver.query<OutboxRow>(
+      "SELECT * FROM outbox_operations ORDER BY timestamp ASC"
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      entityType: r.entity_type,
+      entityId: r.entity_id,
+      operationType: r.operation_type,
+      payload: JSON.parse(r.payload_json),
+      timestamp: r.timestamp,
+      deviceId: r.device_id,
+      status: r.status,
+      rejectionReason: r.rejection_reason,
+    }));
+  }
+
+  async clear(): Promise<void> {
+    await this.driver.run('DELETE FROM outbox_operations');
+  }
 }
