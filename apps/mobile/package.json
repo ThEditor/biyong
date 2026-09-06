@@ -12,10 +12,13 @@
     "lint": "eslint . --ext .ts,.tsx || true"
   },
   "dependencies": {
+    "@biyong/application": "workspace:*",
     "@biyong/domain": "workspace:*",
     "@biyong/local-db": "workspace:*",
     "@biyong/schemas": "workspace:*",
     "@biyong/ui": "workspace:*",
+    "@gluestack-ui/config": "^1.1.20",
+    "@gluestack-ui/themed": "^1.1.73",
     "expo": "~52.0.30",
     "expo-sqlite": "~15.1.2",
     "expo-status-bar": "~2.0.1",

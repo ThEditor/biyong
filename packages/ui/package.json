@@ -23,6 +23,8 @@
   "dependencies": {
     "@biyong/domain": "workspace:*",
     "@biyong/schemas": "workspace:*",
+    "@gluestack-ui/config": "^1.1.20",
+    "@gluestack-ui/themed": "^1.1.73",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
