@@ -1,13 +1,85 @@
-node_modules
-.pnpm-store
-dist
-build
-.expo
-.next
-.turbo
-*.log
-.DS_Store
+# Dependencies & Package Managers
+node_modules/
+.pnpm-store/
+.npm/
+.yarn/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build & Turborepo outputs
+dist/
+build/
+out/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# Expo & React Native
+.expo/
+.expo-shared/
+web-build/
+android/app/build/
+android/.gradle/
+android/build/
+ios/Pods/
+ios/build/
+*.mode1v3
+*.mode2v3
+*.pbxuser
+*.perspectivev3
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# SQLite & Local Databases
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Environment Variables & Secrets
 .env
-.env.local
-.venv
-coverage
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Testing & Coverage
+coverage/
+.nyc_output/
+*.lcov
+
+# Python venv & Cache
+.venv/
+venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE & Editor Files
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/extensions.json
+
+# Temporary files & logs
+*.log
+tmp/
+temp/
+.cache/
