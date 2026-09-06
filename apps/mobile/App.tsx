@@ -17,12 +17,13 @@ import { HomeScreen } from './src/screens/HomeScreen';
 import { AccountsScreen } from './src/screens/AccountsScreen';
 import { TransactionsScreen } from './src/screens/TransactionsScreen';
 import { BudgetsGoalsScreen } from './src/screens/BudgetsGoalsScreen';
+import { GroupsScreen } from './src/screens/GroupsScreen';
 import { ReportsScreen } from './src/screens/ReportsScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { QuickAddModal } from './src/components/QuickAddModal';
 import { OnboardingModal } from './src/components/OnboardingModal';
 
-type TabType = 'home' | 'accounts' | 'transactions' | 'budgets' | 'reports' | 'settings';
+type TabType = 'home' | 'accounts' | 'transactions' | 'groups' | 'budgets' | 'reports' | 'settings';
 
 interface TabItem {
   id: TabType;
@@ -49,6 +50,12 @@ const TABS: TabItem[] = [
     label: 'Activity',
     activeIcon: 'swap-horizontal',
     inactiveIcon: 'swap-horizontal-outline',
+  },
+  {
+    id: 'groups',
+    label: 'Groups',
+    activeIcon: 'people',
+    inactiveIcon: 'people-outline',
   },
   {
     id: 'budgets',
@@ -107,6 +114,8 @@ function MainNavigator() {
         return <AccountsScreen />;
       case 'transactions':
         return <TransactionsScreen />;
+      case 'groups':
+        return <GroupsScreen />;
       case 'budgets':
         return <BudgetsGoalsScreen />;
       case 'reports':
@@ -136,7 +145,7 @@ function MainNavigator() {
         backgroundColor={colors.surface}
         borderTopWidth={1}
         borderTopColor={colors.border}
-        px={8}
+        px={2}
         pt={6}
         pb={bottomInset}
       >

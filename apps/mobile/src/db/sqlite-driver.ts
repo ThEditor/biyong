@@ -7,6 +7,7 @@ import {
   SqliteCategoryRepository,
   SqliteBudgetRepository,
   SqliteGoalRepository,
+  SqliteGroupRepository,
 } from '@biyong/local-db';
 import {
   AccountUseCases,
@@ -15,6 +16,7 @@ import {
   BudgetUseCases,
   GoalUseCases,
   AnalyticsUseCases,
+  GroupUseCases,
 } from '@biyong/application';
 import type { Account } from '@biyong/schemas';
 
@@ -50,12 +52,14 @@ export interface LedgerDatabaseServices {
   categoryRepo: SqliteCategoryRepository;
   budgetRepo: SqliteBudgetRepository;
   goalRepo: SqliteGoalRepository;
+  groupRepo: SqliteGroupRepository;
   accountUseCases: AccountUseCases;
   txUseCases: TransactionUseCases;
   categoryUseCases: CategoryUseCases;
   budgetUseCases: BudgetUseCases;
   goalUseCases: GoalUseCases;
   analyticsUseCases: AnalyticsUseCases;
+  groupUseCases: GroupUseCases;
 }
 
 let dbInstance: SQLite.SQLiteDatabase | null = null;
@@ -81,6 +85,7 @@ export async function initDatabase(): Promise<LedgerDatabaseServices> {
   const categoryRepo = new SqliteCategoryRepository(driver);
   const budgetRepo = new SqliteBudgetRepository(driver);
   const goalRepo = new SqliteGoalRepository(driver);
+  const groupRepo = new SqliteGroupRepository(driver);
 
   // Initialize use cases
   const accountUseCases = new AccountUseCases(accountRepo, txRepo);
@@ -89,6 +94,7 @@ export async function initDatabase(): Promise<LedgerDatabaseServices> {
   const budgetUseCases = new BudgetUseCases(budgetRepo, txRepo);
   const goalUseCases = new GoalUseCases(goalRepo);
   const analyticsUseCases = new AnalyticsUseCases(txRepo);
+  const groupUseCases = new GroupUseCases(groupRepo);
 
   // App starts with no data (clean slate for user)
 
@@ -99,12 +105,14 @@ export async function initDatabase(): Promise<LedgerDatabaseServices> {
     categoryRepo,
     budgetRepo,
     goalRepo,
+    groupRepo,
     accountUseCases,
     txUseCases,
     categoryUseCases,
     budgetUseCases,
     goalUseCases,
     analyticsUseCases,
+    groupUseCases,
   };
 
   return cachedServices;
