@@ -14,8 +14,10 @@ import {
   calculateBudgetStatus,
   calculateGoalProgress,
   calculateNetWorth,
+  generateMonthlyReport,
+  filterTransactions,
 } from '../index.js';
-import type { GroupExpense, Settlement, Budget, Goal, Investment, Liability } from '@biyong/schemas';
+import type { GroupExpense, Settlement, Budget, Goal, Investment, Liability, Transaction, Category } from '@biyong/schemas';
 
 describe('Domain: Money calculations', () => {
   it('correctly creates and formats money in minor units', () => {
@@ -291,5 +293,387 @@ describe('Domain: Budgets, Goals, Wealth', () => {
     expect(summary.totalAssetsMinor).toBe(19000000);
     expect(summary.totalLiabilitiesMinor).toBe(3000000);
     expect(summary.netWorthMinor).toBe(16000000);
+  });
+});
+
+describe('Domain: Monthly Reports', () => {
+  const sampleCategories: Category[] = [
+    { id: 'cat-food', name: 'Food & Dining', icon: 'utensils', parentCategoryId: null, isBuiltin: true },
+    { id: 'cat-groceries', name: 'Groceries', icon: 'shopping-cart', parentCategoryId: null, isBuiltin: true },
+    { id: 'cat-transport', name: 'Transportation', icon: 'car', parentCategoryId: null, isBuiltin: true },
+  ];
+
+  it('correctly aggregates income, expenses, and net savings', () => {
+    const txs: Transaction[] = [
+      {
+        id: 'tx-1',
+        accountId: 'acc-1',
+        type: 'income',
+        amountMinor: 10000000, // ₹1,00,000
+        currency: 'INR',
+        date: '2026-09-01',
+        categoryId: 'salary',
+        subcategory: null,
+        merchant: 'Employer Corp',
+        notes: 'Monthly salary',
+        toAccountId: null,
+        isRecurring: true,
+        recurringFrequency: 'monthly',
+        createdAt: '2026-09-01T00:00:00.000Z',
+        updatedAt: '2026-09-01T00:00:00.000Z',
+      },
+      {
+        id: 'tx-2',
+        accountId: 'acc-1',
+        type: 'expense',
+        amountMinor: 3000000, // ₹30,000
+        currency: 'INR',
+        date: '2026-09-05',
+        categoryId: 'cat-food',
+        subcategory: 'dining',
+        merchant: 'Taj Hotel',
+        notes: 'Dinner',
+        toAccountId: null,
+        isRecurring: false,
+        recurringFrequency: null,
+        createdAt: '2026-09-05T00:00:00.000Z',
+        updatedAt: '2026-09-05T00:00:00.000Z',
+      },
+      {
+        id: 'tx-3',
+        accountId: 'acc-1',
+        type: 'expense',
+        amountMinor: 1000000, // ₹10,000
+        currency: 'INR',
+        date: '2026-09-10',
+        categoryId: 'cat-groceries',
+        subcategory: 'vegetables',
+        merchant: 'Zepto',
+        notes: 'Weekly groceries',
+        toAccountId: null,
+        isRecurring: false,
+        recurringFrequency: null,
+        createdAt: '2026-09-10T00:00:00.000Z',
+        updatedAt: '2026-09-10T00:00:00.000Z',
+      },
+    ];
+
+    const report = generateMonthlyReport(txs, 2026, 9, sampleCategories);
+    expect(report.year).toBe(2026);
+    expect(report.month).toBe(9);
+    expect(report.totalIncomeMinor).toBe(10000000);
+    expect(report.totalExpenseMinor).toBe(4000000);
+    expect(report.netSavingsMinor).toBe(6000000);
+    expect(report.savingsRatePercent).toBe(60); // 60,000 / 100,000 = 60%
+  });
+
+  it('CRITICAL RULE: Never counts transfers towards income or expense', () => {
+    const txs: Transaction[] = [
+      {
+        id: 'tx-inc',
+        accountId: 'acc-1',
+        type: 'income',
+        amountMinor: 5000000, // ₹50,000
+        currency: 'INR',
+        date: '2026-09-01',
+        categoryId: 'salary',
+        subcategory: null,
+        merchant: null,
+        notes: null,
+        toAccountId: null,
+        isRecurring: false,
+        recurringFrequency: null,
+        createdAt: '2026-09-01T00:00:00.000Z',
+        updatedAt: '2026-09-01T00:00:00.000Z',
+      },
+      {
+        id: 'tx-transfer-out',
+        accountId: 'acc-1',
+        type: 'transfer',
+        amountMinor: 2000000, // ₹20,000 transferred to acc-2
+        currency: 'INR',
+        date: '2026-09-02',
+        categoryId: null,
+        subcategory: null,
+        merchant: null,
+        notes: 'Internal transfer',
+        toAccountId: 'acc-2',
+        isRecurring: false,
+        recurringFrequency: null,
+        createdAt: '2026-09-02T00:00:00.000Z',
+        updatedAt: '2026-09-02T00:00:00.000Z',
+      },
+      {
+        id: 'tx-exp',
+        accountId: 'acc-2',
+        type: 'expense',
+        amountMinor: 1000000, // ₹10,000
+        currency: 'INR',
+        date: '2026-09-03',
+        categoryId: 'cat-food',
+        subcategory: null,
+        merchant: 'Swiggy',
+        notes: null,
+        toAccountId: null,
+        isRecurring: false,
+        recurringFrequency: null,
+        createdAt: '2026-09-03T00:00:00.000Z',
+        updatedAt: '2026-09-03T00:00:00.000Z',
+      },
+    ];
+
+    const report = generateMonthlyReport(txs, 2026, 9, sampleCategories);
+    expect(report.totalIncomeMinor).toBe(5000000);
+    expect(report.totalExpenseMinor).toBe(1000000);
+    expect(report.netSavingsMinor).toBe(4000000);
+    expect(report.savingsRatePercent).toBe(80);
+  });
+
+  it('handles negative savings rate and 0 income safely', () => {
+    const txs: Transaction[] = [
+      {
+        id: 'tx-1',
+        accountId: 'acc-1',
+        type: 'expense',
+        amountMinor: 500000, // ₹5,000
+        currency: 'INR',
+        date: '2026-09-01',
+        categoryId: 'cat-food',
+        subcategory: null,
+        merchant: 'Cafe',
+        notes: null,
+        toAccountId: null,
+        isRecurring: false,
+        recurringFrequency: null,
+        createdAt: '2026-09-01T00:00:00.000Z',
+        updatedAt: '2026-09-01T00:00:00.000Z',
+      },
+    ];
+
+    const report = generateMonthlyReport(txs, 2026, 9);
+    expect(report.totalIncomeMinor).toBe(0);
+    expect(report.totalExpenseMinor).toBe(500000);
+    expect(report.netSavingsMinor).toBe(-500000);
+    expect(report.savingsRatePercent).toBe(0);
+  });
+
+  it('correctly calculates category spending breakdown and top merchants', () => {
+    const txs: Transaction[] = [
+      {
+        id: 'tx-1',
+        accountId: 'acc-1',
+        type: 'expense',
+        amountMinor: 600000, // ₹6,000 on Food
+        currency: 'INR',
+        date: '2026-09-02',
+        categoryId: 'cat-food',
+        subcategory: 'dining',
+        merchant: 'Starbucks',
+        notes: null,
+        toAccountId: null,
+        isRecurring: false,
+        recurringFrequency: null,
+        createdAt: '2026-09-02T00:00:00.000Z',
+        updatedAt: '2026-09-02T00:00:00.000Z',
+      },
+      {
+        id: 'tx-2',
+        accountId: 'acc-1',
+        type: 'expense',
+        amountMinor: 400000, // ₹4,000 on Groceries
+        currency: 'INR',
+        date: '2026-09-03',
+        categoryId: 'cat-groceries',
+        subcategory: 'market',
+        merchant: 'Zepto',
+        notes: null,
+        toAccountId: null,
+        isRecurring: false,
+        recurringFrequency: null,
+        createdAt: '2026-09-03T00:00:00.000Z',
+        updatedAt: '2026-09-03T00:00:00.000Z',
+      },
+      {
+        id: 'tx-3',
+        accountId: 'acc-1',
+        type: 'expense',
+        amountMinor: 200000, // ₹2,000 on Food
+        currency: 'INR',
+        date: '2026-09-04',
+        categoryId: 'cat-food',
+        subcategory: 'coffee',
+        merchant: 'Starbucks',
+        notes: null,
+        toAccountId: null,
+        isRecurring: false,
+        recurringFrequency: null,
+        createdAt: '2026-09-04T00:00:00.000Z',
+        updatedAt: '2026-09-04T00:00:00.000Z',
+      },
+      {
+        id: 'tx-prev-month',
+        accountId: 'acc-1',
+        type: 'expense',
+        amountMinor: 999900,
+        currency: 'INR',
+        date: '2026-08-15',
+        categoryId: 'cat-food',
+        subcategory: null,
+        merchant: 'Other',
+        notes: null,
+        toAccountId: null,
+        isRecurring: false,
+        recurringFrequency: null,
+        createdAt: '2026-08-15T00:00:00.000Z',
+        updatedAt: '2026-08-15T00:00:00.000Z',
+      },
+    ];
+
+    const report = generateMonthlyReport(txs, 2026, 9, sampleCategories);
+    // Total expense for Sept: 6,000 + 4,000 + 2,000 = 12,000 (1200000 minor)
+    expect(report.totalExpenseMinor).toBe(1200000);
+
+    // Food: 8,000 (67%), Groceries: 4,000 (33%)
+    expect(report.categoryBreakdown).toHaveLength(2);
+    expect(report.categoryBreakdown[0]).toEqual({
+      categoryId: 'cat-food',
+      categoryName: 'Food & Dining',
+      spentMinor: 800000,
+      percentage: 67,
+    });
+    expect(report.categoryBreakdown[1]).toEqual({
+      categoryId: 'cat-groceries',
+      categoryName: 'Groceries',
+      spentMinor: 400000,
+      percentage: 33,
+    });
+
+    // Top merchants: Starbucks (8,000), Zepto (4,000)
+    expect(report.topMerchants).toEqual([
+      { merchant: 'Starbucks', spentMinor: 800000 },
+      { merchant: 'Zepto', spentMinor: 400000 },
+    ]);
+  });
+});
+
+describe('Domain: Transaction Filters', () => {
+  const txs: Transaction[] = [
+    {
+      id: 'tx-1',
+      accountId: 'acc-bank',
+      type: 'expense',
+      amountMinor: 50000,
+      currency: 'INR',
+      date: '2026-09-01',
+      categoryId: 'food',
+      subcategory: 'takeout',
+      merchant: 'Swiggy',
+      notes: 'Lunch at office',
+      toAccountId: null,
+      isRecurring: false,
+      recurringFrequency: null,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+    },
+    {
+      id: 'tx-2',
+      accountId: 'acc-wallet',
+      type: 'expense',
+      amountMinor: 20000,
+      currency: 'INR',
+      date: '2026-09-05',
+      categoryId: 'groceries',
+      subcategory: 'dairy',
+      merchant: 'Zepto Quick',
+      notes: 'Milk and bread',
+      toAccountId: null,
+      isRecurring: false,
+      recurringFrequency: null,
+      createdAt: '2026-09-05T00:00:00.000Z',
+      updatedAt: '2026-09-05T00:00:00.000Z',
+    },
+    {
+      id: 'tx-3',
+      accountId: 'acc-bank',
+      type: 'income',
+      amountMinor: 5000000,
+      currency: 'INR',
+      date: '2026-09-10',
+      categoryId: 'salary',
+      subcategory: null,
+      merchant: 'Acme Corp',
+      notes: 'Monthly bonus',
+      toAccountId: null,
+      isRecurring: false,
+      recurringFrequency: null,
+      createdAt: '2026-09-10T00:00:00.000Z',
+      updatedAt: '2026-09-10T00:00:00.000Z',
+    },
+    {
+      id: 'tx-4',
+      accountId: 'acc-bank',
+      type: 'transfer',
+      amountMinor: 100000,
+      currency: 'INR',
+      date: '2026-09-15',
+      categoryId: null,
+      subcategory: null,
+      merchant: null,
+      notes: 'Refill wallet',
+      toAccountId: 'acc-wallet',
+      isRecurring: false,
+      recurringFrequency: null,
+      createdAt: '2026-09-15T00:00:00.000Z',
+      updatedAt: '2026-09-15T00:00:00.000Z',
+    },
+  ];
+
+  it('filters by accountId including transfer destinations', () => {
+    const bankTxs = filterTransactions(txs, { accountId: 'acc-bank' });
+    expect(bankTxs.map((t) => t.id)).toEqual(['tx-1', 'tx-3', 'tx-4']);
+
+    const walletTxs = filterTransactions(txs, { accountId: 'acc-wallet' });
+    expect(walletTxs.map((t) => t.id)).toEqual(['tx-2', 'tx-4']);
+  });
+
+  it('filters by categoryId and type', () => {
+    const foodTxs = filterTransactions(txs, { categoryId: 'food' });
+    expect(foodTxs).toHaveLength(1);
+    expect(foodTxs[0]?.id).toBe('tx-1');
+
+    const incomes = filterTransactions(txs, { type: 'income' });
+    expect(incomes).toHaveLength(1);
+    expect(incomes[0]?.id).toBe('tx-3');
+
+    const transfers = filterTransactions(txs, { type: 'transfer' });
+    expect(transfers).toHaveLength(1);
+    expect(transfers[0]?.id).toBe('tx-4');
+  });
+
+  it('filters by date range', () => {
+    const range = filterTransactions(txs, {
+      startDate: '2026-09-02',
+      endDate: '2026-09-12',
+    });
+    expect(range.map((t) => t.id)).toEqual(['tx-2', 'tx-3']);
+  });
+
+  it('searches query against merchant, notes, and subcategory case-insensitively', () => {
+    // Search merchant
+    const swiggy = filterTransactions(txs, { searchQuery: 'swiggy' });
+    expect(swiggy.map((t) => t.id)).toEqual(['tx-1']);
+
+    // Search notes
+    const milk = filterTransactions(txs, { searchQuery: 'MILK' });
+    expect(milk.map((t) => t.id)).toEqual(['tx-2']);
+
+    // Search subcategory
+    const takeout = filterTransactions(txs, { searchQuery: 'Takeout' });
+    expect(takeout.map((t) => t.id)).toEqual(['tx-1']);
+  });
+
+  it('returns all transactions when empty filter is passed', () => {
+    const all = filterTransactions(txs, {});
+    expect(all).toHaveLength(4);
   });
 });

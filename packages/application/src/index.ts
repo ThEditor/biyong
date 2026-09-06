@@ -1,4 +1,6 @@
 export * from './repositories.js';
+export * from './use-cases/accounts.js';
+export * from './use-cases/categories.js';
 export * from './use-cases/transactions.js';
 export * from './use-cases/groups.js';
 export * from './use-cases/budgets.js';

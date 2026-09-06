@@ -4,3 +4,5 @@ export * from './settlements.js';
 export * from './budgets.js';
 export * from './goals.js';
 export * from './wealth.js';
+export * from './reports.js';
+export * from './filters.js';

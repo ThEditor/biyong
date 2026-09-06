@@ -1,5 +1,6 @@
 import type {
   Account,
+  Category,
   Transaction,
   Group,
   GroupMember,
@@ -10,6 +11,12 @@ import type {
   Investment,
   Liability,
 } from '@biyong/schemas';
+
+export interface CategoryRepository {
+  findAll(): Promise<Category[]>;
+  findById(id: string): Promise<Category | null>;
+  create(cat: Category): Promise<void>;
+}
 
 export interface AccountRepository {
   create(account: Account): Promise<void>;
