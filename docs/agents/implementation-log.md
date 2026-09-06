@@ -1,55 +1,70 @@
 # AI Agent Implementation Log
 
-## Current Phase: PHASE 1 — Local Money Ledger
+# AI Agent Implementation Log
+
+## Current Phase: PHASE 2 — Budgets & Goals
 
 ### Status: COMPLETED & VERIFIED (Stop Gate Passed)
 
 ---
 
-### What Is Implemented & Verified in Phase 1
-1. **Domain & Application Engine:**
-   - **Monthly Reports:** `generateMonthlyReport` calculates monthly total income, total expenses, net savings, savings rate %, category breakdown with percentages, and merchant rankings.
-   - **Financial Invariants Enforced:** Transfers (`type === 'transfer'`) between owned accounts are strictly excluded from income and expense totals.
-   - **Search & Filters:** Case-insensitive search across merchant, notes, and subcategory. Multi-predicate filtering by account, category, type, and date ranges.
-   - **Account Use Cases:** `AccountUseCases` handles account creation, archiving, and derived balance calculation across all accounts strictly from initial balances and transactions (preventing arbitrary mutable totals).
-   - **Category Use Cases:** `CategoryUseCases` handles builtin and custom categories.
+### What Is Implemented & Verified in Phase 2
+1. **Domain Engine (`packages/domain`):**
+   - **Budgets (`budgets.ts`):** Weekly and monthly period calculations with ISO date bounds (`calculateBudgetPeriod`), rollover calculations carrying positive surpluses or negative deficits (`calculateRollover`), adherence status with health states: `healthy` (<80%), `warning` (80-99%), `exceeded` (>=100%), and daily spending allowances remaining (`calculateBudgetStatus`).
+   - **Goals (`goals.ts`):** Savings goals with target dates, required monthly savings rate needed to meet target deadlines (`calculateRequiredMonthlySavings`), and deterministic projected completion dates (`projectCompletionDate`, `calculateGoalProgress`).
+   - **Spending Trends (`trends.ts`):** Fixed vs variable spending classification (`classifySpending`) based on recurring flag or fixed category IDs; multi-month cash flow trends with period-by-period income, expenses, net savings, and savings rate (`calculateSpendingTrends`).
+   - All tests passing (31/31 unit tests).
 
-2. **Local SQLite Persistence:**
-   - `SqliteCategoryRepository` managing builtin and custom categories.
-   - `SqliteTransactionRepository.findByFilter` with parameterized SQL queries for search and multi-criteria filters.
-   - `SqliteAccountRepository.archive` for account status management.
-   - All monetary fields stored strictly as integer minor units (`paise`/`cents`).
+2. **Application Layer (`packages/application`):**
+   - `BudgetUseCases`: `createBudget`, `getBudget`, `getBudgetByCategory`, `listBudgets`, `updateBudget`, `deleteBudget`, `getBudgetStatus`, `listBudgetsWithStatus`.
+   - `GoalUseCases`: `createGoal`, `getGoal`, `listGoals`, `updateGoal`, `deleteGoal`, `contributeToGoal`, `getGoalProgress`, `listGoalsWithProgress`.
+   - `AnalyticsUseCases`: `getFixedVsVariable`, `getSpendingTrends`.
+   - All tests passing (20/20 unit tests).
 
-3. **Mobile UI (`apps/mobile`) with Gluestack UI v5:**
-   - **Dashboard / Ledger (`HomeScreen`):** Net worth overview, account balance cards, quick action buttons (Expense, Income, Transfer), recent transactions feed, and floating add button.
-   - **Accounts (`AccountsScreen`):** Full list of accounts with derived balances, type badges, archiving, and modal to add new accounts.
-   - **Transactions (`TransactionsScreen`):** Instant search bar, filter chips for type (All, Expense, Income, Transfer) and categories, tap to view / edit / delete transactions.
-   - **Reports (`ReportsScreen`):** Month & Year navigation, Income vs Expense, Savings Rate %, Category breakdown progress bars, and Top Merchants.
-   - **Settings (`SettingsScreen`):** Theme mode switcher (Light/Dark/System) and 6 preset accent themes (`default`, `ocean`, `forest`, `violet`, `amber`, `rose`) with live swatches and offline SQLite statistics.
-   - **Quick Add Modal (`QuickAddModal`):** Rupee input converted to integer paise minor units (`Math.round(val * 100)`), source/destination account selectors, category picker, merchant/notes input, and recurring frequency options.
-   - **Gluestack UI Integration:** `GluestackUIProvider` configured with design tokens, supporting all themes and color modes without hardcoded colors.
+3. **Local SQLite Persistence (`packages/local-db`):**
+   - `SqliteBudgetRepository`: CRUD operations for category budgets with period and rollover tracking.
+   - `SqliteGoalRepository`: CRUD operations for savings goals sorted chronologically by target date.
+   - Parameter null-coalescing on optional fields for clean `node:sqlite` execution.
+   - All tests passing (18/18 integration tests).
 
-4. **Stop Gate Verification (`pnpm verify:phase1`):**
-   - 100% offline verification (zero network requests).
-   - Created accounts (Checking Bank ₹10,000, Cash Wallet ₹500, Credit Card ₹0).
-   - Recorded Salary income (₹40,000), Groceries expense (₹2,400), Tea expense (₹50), Dinner expense (₹1,200), ATM Transfer (₹2,000), and recurring subscription (₹649).
-   - Verified derived balances: Checking (₹45,600), Cash (₹2,450), Credit Card (-₹1,849).
-   - Verified that ATM Transfer did not contaminate income (₹40,000) or expense (₹4,299) totals.
-   - Verified Net Savings (₹35,701) and Savings Rate (89%).
-   - Verified search ("Zepto") and category filtering ("cat-food").
+4. **Mobile UI (`apps/mobile`):**
+   - **Budgets & Goals Hub (`BudgetsGoalsScreen`):**
+     - Pill tab switch between Budgets and Goals.
+     - Overall budget adherence, category progress bars, health badges (Emerald `healthy`, Amber `warning`, Red `exceeded`), daily allowances ("₹X / day remaining"), rollover indicators, and deletion confirmation.
+     - Goals overview card, target date badges, progress bars, required monthly savings, and projected completion status.
+   - **Modals:**
+     - `AddBudgetModal`: Category selection, amount in currency with minor units preview, Weekly/Monthly period selector, and Rollover toggle.
+     - `AddGoalModal`: Title, target amount, initial amount, and target date with quick preset chips (3m, 6m, 1y, 2y).
+     - `ContributeGoalModal`: Quick modal to allocate funds to an active savings goal.
+   - **Advanced Analytics in Reports (`ReportsScreen`):**
+     - Fixed vs Variable spending card with two-color split bar and user-friendly explanation.
+     - Multi-month spending & savings trends breakdown with dynamic savings rate badges.
+   - **Strict Design Adherence:**
+     - 100% `@expo/vector-icons` (`Ionicons` / `Feather`), zero emojis.
+     - No developer jargon in consumer views.
+     - Safe Area insets respected across status bar and navigation bar.
+     - Full theme token styling across all light/dark and accent color combinations.
+
+5. **Stop Gate Verification (`pnpm verify:phase2`):**
+   - 100% offline verification across 6 sections:
+     1. Database & repository initialization.
+     2. Account setup and transactions.
+     3. Category budgets, period calculations, daily allowances, and surplus rollover.
+     4. Savings goals, required monthly savings, contributions, and completion projections.
+     5. Fixed vs variable spending classification (Rent/Utilities vs Groceries/Dining).
+     6. Multi-month spending trends and savings rate calculation.
 
 ---
 
 ### Previous Completed Phases
-- **PHASE 0 — Engineering Foundation:** Completed & Verified (Monorepo, Turbo, Schemas, Domain, Local-DB, Database, Sync, Auth, API Client, UI Design Tokens, Hono API, Vite Web, Expo Mobile).
+- **PHASE 0 — Engineering Foundation:** Completed & Verified (`2153df3`).
+- **PHASE 1 — Local Money Ledger:** Completed & Verified (`6ec920e`, `9e876f3`, `7738abb`, `27501aa`).
 
 ---
 
-### Next Recommended Tasks: PHASE 2 — Budgets & Goals
-1. Implement budget management with rollover calculations:
-   - Category budgets with weekly and monthly periods
-   - Budget progress tracking and alert states (warning/over-budget)
-2. Implement financial goals:
-   - Savings goals with target amounts and target dates
-   - Contribution history and projected completion calculations
-3. Build Budgets and Goals screens in `apps/mobile` and `apps/web`.
+### Next Recommended Tasks: PHASE 3 — Private Groups, Splits & Settlements
+1. Offline-first group ledger management (`groups`, `group_members`, `group_expenses`, `group_splits`).
+2. Split methods: Equal, Exact minor units, Percentages, and Shares.
+3. Debt simplification algorithm (min-cash-flow graph reduction) to settle debts with minimum transactions.
+4. Mobile UI for Groups, Expense Splits, and Debt Settlement.
+
