@@ -22,6 +22,7 @@ import { ReportsScreen } from './src/screens/ReportsScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { QuickAddModal } from './src/components/QuickAddModal';
 import { OnboardingModal } from './src/components/OnboardingModal';
+import { AuthModal } from './src/components/AuthModal';
 
 type TabType = 'home' | 'accounts' | 'transactions' | 'groups' | 'budgets' | 'reports' | 'settings';
 
@@ -186,6 +187,9 @@ function MainNavigator() {
 
       {/* Quick Add Modal */}
       <QuickAddModal />
+
+      {/* Authentication & Cloud Sync Modal */}
+      <AuthModal />
 
       {/* Onboarding Flow for First-time Launch */}
       <OnboardingModal visible={!hasCompletedOnboarding} />

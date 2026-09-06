@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { ScrollView, StyleSheet, TouchableOpacity, Alert, View, ActivityIndicator } from 'react-native';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import {
   Box,
@@ -27,7 +27,42 @@ const ACCENT_LIST: Array<{ id: AccentTheme; label: string; previewColor: string 
 
 export const SettingsScreen: React.FC = () => {
   const { mode, accent, resolvedMode, colors, tokens, setMode, setAccent } = useAppTheme();
-  const { stats, seedDemoData, clearAllData, resetOnboarding } = useLedger();
+  const {
+    stats,
+    seedDemoData,
+    clearAllData,
+    resetOnboarding,
+    user,
+    deviceId,
+    isGuest,
+    syncStatus,
+    pendingSyncCount,
+    lastSyncedAt,
+    openAuthModal,
+    logout,
+    syncNow,
+  } = useLedger();
+
+  const handleSignOut = () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out? Your financial records remain securely stored on this device in guest mode.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await logout();
+            } catch (err: any) {
+              Alert.alert('Error', err?.message || 'Failed to sign out.');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const handleSeedDemo = () => {
     Alert.alert(
@@ -79,6 +114,223 @@ export const SettingsScreen: React.FC = () => {
   return (
     <Box flex={1} backgroundColor={colors.background}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Account & Cloud Sync Section */}
+        <VStack space="sm">
+          <Text color={colors.textPrimary} fontSize={12} fontWeight="bold" letterSpacing={0.8}>
+            ACCOUNT & CLOUD SYNC
+          </Text>
+
+          {isGuest ? (
+            <Card
+              backgroundColor={colors.surface}
+              borderColor={colors.border}
+              borderWidth={1}
+              borderRadius={tokens.radius.md}
+              p={tokens.spacing.md}
+            >
+              <HStack space="md" alignItems="center" mb={12}>
+                <View
+                  style={[
+                    styles.avatarCircle,
+                    { backgroundColor: colors.surfaceSubtle, borderColor: colors.border },
+                  ]}
+                >
+                  <Ionicons name="cloud-offline-outline" size={22} color={colors.textSecondary} />
+                </View>
+                <VStack flex={1}>
+                  <Text color={colors.textPrimary} fontSize={15} fontWeight="700">
+                    Guest Mode (100% Offline)
+                  </Text>
+                  <Text color={colors.textMuted} fontSize={11} mt={1}>
+                    Device ID: {deviceId ? `${deviceId.slice(0, 16)}...` : 'Local Device'}
+                  </Text>
+                </VStack>
+              </HStack>
+
+              <Text color={colors.textSecondary} fontSize={13} lineHeight={18} mb={14}>
+                Your financial ledger is saved on this device. Sign in or register to sync across devices.
+              </Text>
+
+              <TouchableOpacity
+                onPress={() => openAuthModal()}
+                style={[
+                  styles.authActionBtn,
+                  {
+                    backgroundColor: colors.accentPrimary,
+                    borderRadius: tokens.radius.md,
+                  },
+                ]}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="log-in-outline" size={18} color={colors.accentForeground} style={{ marginRight: 6 }} />
+                <Text style={{ color: colors.accentForeground, fontSize: 14, fontWeight: '700' }}>
+                  Sign In or Register
+                </Text>
+              </TouchableOpacity>
+            </Card>
+          ) : (
+            <>
+              {/* User Profile Card */}
+              <Card
+                backgroundColor={colors.surface}
+                borderColor={colors.border}
+                borderWidth={1}
+                borderRadius={tokens.radius.md}
+                p={tokens.spacing.md}
+              >
+                <HStack space="md" alignItems="center">
+                  <View
+                    style={[
+                      styles.avatarCircle,
+                      { backgroundColor: colors.accentSubtle, borderColor: colors.accentPrimary },
+                    ]}
+                  >
+                    <Ionicons name="person" size={22} color={colors.accentPrimary} />
+                  </View>
+                  <VStack flex={1}>
+                    <Text color={colors.textPrimary} fontSize={16} fontWeight="700">
+                      {user?.name || 'User'}
+                    </Text>
+                    <Text color={colors.textSecondary} fontSize={13} mt={1}>
+                      {user?.email}
+                    </Text>
+                    <View
+                      style={[
+                        styles.deviceIdBadge,
+                        { backgroundColor: colors.surfaceSubtle, borderColor: colors.border },
+                      ]}
+                    >
+                      <Ionicons name="hardware-chip-outline" size={11} color={colors.textMuted} />
+                      <Text style={{ color: colors.textMuted, fontSize: 10, fontWeight: '600' }}>
+                        {deviceId ? deviceId.slice(0, 18) : 'device'}
+                      </Text>
+                    </View>
+                  </VStack>
+                </HStack>
+              </Card>
+
+              {/* Cloud Sync Card */}
+              <Card
+                backgroundColor={colors.surface}
+                borderColor={colors.border}
+                borderWidth={1}
+                borderRadius={tokens.radius.md}
+                p={tokens.spacing.md}
+              >
+                <HStack justifyContent="space-between" alignItems="center" mb={12}>
+                  <Text color={colors.textSecondary} fontSize={12} fontWeight="bold" letterSpacing={0.5}>
+                    CLOUD SYNCHRONIZATION
+                  </Text>
+                  {/* Sync status badge */}
+                  {syncStatus === 'syncing' ? (
+                    <Badge
+                      backgroundColor={colors.accentPrimary}
+                      borderRadius={tokens.radius.sm}
+                      px="$2"
+                      py="$0.5"
+                    >
+                      <BadgeText color={colors.accentForeground} fontSize={10} fontWeight="700">
+                        Syncing
+                      </BadgeText>
+                    </Badge>
+                  ) : pendingSyncCount > 0 ? (
+                    <Badge
+                      backgroundColor={colors.warning}
+                      borderRadius={tokens.radius.sm}
+                      px="$2"
+                      py="$0.5"
+                    >
+                      <BadgeText color={colors.background} fontSize={10} fontWeight="700">
+                        Pending Changes
+                      </BadgeText>
+                    </Badge>
+                  ) : (
+                    <Badge
+                      backgroundColor={colors.success}
+                      borderRadius={tokens.radius.sm}
+                      px="$2"
+                      py="$0.5"
+                    >
+                      <BadgeText color={colors.accentForeground} fontSize={10} fontWeight="700">
+                        Synced
+                      </BadgeText>
+                    </Badge>
+                  )}
+                </HStack>
+
+                <VStack space="xs" mb={14}>
+                  <HStack justifyContent="space-between" alignItems="center">
+                    <Text color={colors.textSecondary} fontSize={13}>
+                      Pending Changes:
+                    </Text>
+                    <Text color={colors.textPrimary} fontSize={13} fontWeight="700">
+                      {pendingSyncCount === 0
+                        ? '0 waiting to sync'
+                        : `${pendingSyncCount} ${pendingSyncCount === 1 ? 'change' : 'changes'} waiting to sync`}
+                    </Text>
+                  </HStack>
+
+                  <HStack justifyContent="space-between" alignItems="center" mt={4}>
+                    <Text color={colors.textSecondary} fontSize={13}>
+                      Last Synced:
+                    </Text>
+                    <Text color={colors.textMuted} fontSize={12}>
+                      {lastSyncedAt
+                        ? new Date(lastSyncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                        : 'Never'}
+                    </Text>
+                  </HStack>
+                </VStack>
+
+                {/* Sync Now Button */}
+                <TouchableOpacity
+                  onPress={() => syncNow()}
+                  disabled={syncStatus === 'syncing'}
+                  style={[
+                    styles.authActionBtn,
+                    {
+                      backgroundColor: colors.surfaceSubtle,
+                      borderColor: colors.border,
+                      borderWidth: 1,
+                      borderRadius: tokens.radius.md,
+                      opacity: syncStatus === 'syncing' ? 0.6 : 1,
+                    },
+                  ]}
+                  activeOpacity={0.8}
+                >
+                  {syncStatus === 'syncing' ? (
+                    <ActivityIndicator size="small" color={colors.accentPrimary} style={{ marginRight: 8 }} />
+                  ) : (
+                    <Ionicons name="sync-outline" size={16} color={colors.accentPrimary} style={{ marginRight: 6 }} />
+                  )}
+                  <Text style={{ color: colors.accentPrimary, fontSize: 13, fontWeight: '700' }}>
+                    {syncStatus === 'syncing' ? 'Syncing Now...' : 'Sync Now'}
+                  </Text>
+                </TouchableOpacity>
+              </Card>
+
+              {/* Sign Out Button */}
+              <TouchableOpacity
+                onPress={handleSignOut}
+                style={[
+                  styles.signOutBtn,
+                  {
+                    backgroundColor: colors.surfaceSubtle,
+                    borderColor: colors.border,
+                    borderRadius: tokens.radius.md,
+                  },
+                ]}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="log-out-outline" size={16} color={colors.danger} style={{ marginRight: 6 }} />
+                <Text style={{ color: colors.danger, fontSize: 13, fontWeight: '700' }}>
+                  Sign Out
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </VStack>
+
         {/* Appearance Section */}
         <VStack space="sm">
           <Text color={colors.textPrimary} fontSize={12} fontWeight="bold" letterSpacing={0.8}>
@@ -387,6 +639,38 @@ const styles = StyleSheet.create({
   },
   mgmtBtn: {
     padding: 12,
+    borderWidth: 1,
+  },
+  avatarCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deviceIdBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    marginTop: 6,
+    gap: 4,
+  },
+  authActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  signOutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
     borderWidth: 1,
   },
 });

@@ -9,6 +9,9 @@ import type {
   GroupMember,
   GroupExpense,
   Settlement,
+  SessionUser,
+  SyncStatus,
+  SyncOperation,
 } from '@biyong/schemas';
 import type {
   BudgetStatus,
@@ -20,6 +23,16 @@ import type {
   DependencyGraph,
 } from '@biyong/domain';
 import type { AccountWithDerivedBalance } from '@biyong/application';
+import {
+  InMemoryAuthService,
+  createGuestSession,
+  buildGuestMigrationPlan,
+} from '@biyong/auth';
+import {
+  SyncEngine,
+  createSyncOperation,
+  type SyncServerClient,
+} from '@biyong/sync';
 import { initDatabase, type LedgerDatabaseServices } from '../db/sqlite-driver';
 
 function generateId(prefix: string): string {
@@ -28,6 +41,52 @@ function generateId(prefix: string): string {
   }
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 9)}`;
 }
+
+class MobileSyncServerClient implements SyncServerClient {
+  private operationsMap = new Map<string, SyncOperation>();
+
+  async pushOperations(ops: SyncOperation[]): Promise<{
+    syncedIds: string[];
+    rejected: { id: string; reason: string }[];
+  }> {
+    const syncedIds: string[] = [];
+    const rejected: { id: string; reason: string }[] = [];
+    for (const op of ops) {
+      if (this.operationsMap.has(op.id)) {
+        syncedIds.push(op.id);
+        continue;
+      }
+      this.operationsMap.set(op.id, op);
+      syncedIds.push(op.id);
+    }
+    return { syncedIds, rejected };
+  }
+
+  async pullOperations(sinceCursor?: string): Promise<{
+    operations: SyncOperation[];
+    nextCursor: string;
+  }> {
+    const allOps = Array.from(this.operationsMap.values());
+    let filtered = allOps;
+    if (sinceCursor) {
+      const cursorTime = new Date(sinceCursor).getTime();
+      if (!isNaN(cursorTime)) {
+        filtered = allOps.filter((o) => new Date(o.timestamp).getTime() > cursorTime);
+      }
+    }
+    const latestCursor =
+      filtered.length > 0
+        ? filtered[filtered.length - 1].timestamp
+        : sinceCursor || new Date().toISOString();
+    return {
+      operations: filtered,
+      nextCursor: latestCursor,
+    };
+  }
+}
+
+const defaultSyncServerClient = new MobileSyncServerClient();
+const defaultAuthService = new InMemoryAuthService();
 
 export interface DatabaseStats {
   accountsCount: number;
@@ -117,6 +176,22 @@ export interface LedgerContextValue {
   openAddModal: (type?: 'expense' | 'income' | 'transfer') => void;
   openEditModal: (tx: Transaction) => void;
   closeAddModal: () => void;
+
+  // Authentication & Cloud Sync
+  user: SessionUser | null;
+  token: string | null;
+  deviceId: string;
+  isGuest: boolean;
+  syncStatus: SyncStatus;
+  pendingSyncCount: number;
+  lastSyncedAt: string | null;
+  isAuthModalOpen: boolean;
+  openAuthModal: () => void;
+  closeAuthModal: () => void;
+  login: (email: string, password: string) => Promise<void>;
+  register: (name: string, email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  syncNow: () => Promise<void>;
 }
 
 const LedgerContext = createContext<LedgerContextValue | null>(null);
@@ -139,6 +214,18 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     dbEngine: 'expo-sqlite v15.1 (offline-first)',
   });
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(true);
+
+  // Authentication & Cloud Sync state
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [deviceId, setDeviceId] = useState<string>('');
+  const deviceIdRef = useRef<string>('');
+  deviceIdRef.current = deviceId;
+  const [isGuest, setIsGuest] = useState<boolean>(true);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
+  const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
 
   // Groups & Splits state
   const [groups, setGroups] = useState<Group[]>([]);
@@ -252,6 +339,35 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         const pref = await s.driver.queryOne<{ value: string }>('SELECT value FROM app_preferences WHERE key = ?', ['onboarding_completed']);
         setHasCompletedOnboarding(pref?.value === 'true');
 
+        // Check device ID or generate a new one
+        let curDeviceId = await s.syncStateRepo.getDeviceId();
+        if (!curDeviceId) {
+          curDeviceId = generateId('device');
+          await s.syncStateRepo.setDeviceId(curDeviceId);
+        }
+        setDeviceId(curDeviceId);
+        deviceIdRef.current = curDeviceId;
+
+        // Check active session
+        const savedToken = await s.syncStateRepo.getAuthToken();
+        const savedUser = await s.syncStateRepo.getActiveUser();
+        if (savedToken && savedUser) {
+          setToken(savedToken);
+          setUser(savedUser);
+          setIsGuest(false);
+        } else {
+          setUser(null);
+          setToken(null);
+          setIsGuest(true);
+        }
+
+        // Check pending outbox operations
+        const pCount = await s.outboxRepo.getPendingCount();
+        setPendingSyncCount(pCount);
+
+        const lastSync = await s.syncStateRepo.get('last_synced_at');
+        setLastSyncedAt(lastSync);
+
         setIsReady(true);
       } catch (err) {
         console.error('Failed to bootstrap ledger:', err);
@@ -273,6 +389,16 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       };
 
       await services.txUseCases.createTransaction(newTx);
+      const op = createSyncOperation({
+        entityType: 'transaction',
+        entityId: newTx.id,
+        operationType: 'create',
+        payload: newTx as unknown as Record<string, unknown>,
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
       await refreshLedger();
     },
     [services, refreshLedger]
@@ -286,6 +412,16 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         updatedAt: new Date().toISOString(),
       };
       await services.txUseCases.updateTransaction(updated);
+      const op = createSyncOperation({
+        entityType: 'transaction',
+        entityId: updated.id,
+        operationType: 'update',
+        payload: updated as unknown as Record<string, unknown>,
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
       await refreshLedger();
     },
     [services, refreshLedger]
@@ -295,6 +431,16 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     async (id: string) => {
       if (!services) throw new Error('Database not ready');
       await services.txUseCases.deleteTransaction(id);
+      const op = createSyncOperation({
+        entityType: 'transaction',
+        entityId: id,
+        operationType: 'delete',
+        payload: { id },
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
       await refreshLedger();
     },
     [services, refreshLedger]
@@ -320,6 +466,16 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         updatedAt: now,
       };
       await services.accountUseCases.createAccount(newAcc);
+      const op = createSyncOperation({
+        entityType: 'account',
+        entityId: newAcc.id,
+        operationType: 'create',
+        payload: newAcc as unknown as Record<string, unknown>,
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
       await refreshLedger();
     },
     [services, refreshLedger]
@@ -356,6 +512,16 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         updatedAt: now,
       };
       await services.budgetUseCases.createBudget(newBudget);
+      const op = createSyncOperation({
+        entityType: 'budget',
+        entityId: newBudget.id,
+        operationType: 'create',
+        payload: newBudget as unknown as Record<string, unknown>,
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
       await refreshLedger();
     },
     [services, refreshLedger]
@@ -365,6 +531,16 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     async (id: string) => {
       if (!services) throw new Error('Database not ready');
       await services.budgetUseCases.deleteBudget(id);
+      const op = createSyncOperation({
+        entityType: 'budget',
+        entityId: id,
+        operationType: 'delete',
+        payload: { id },
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
       await refreshLedger();
     },
     [services, refreshLedger]
@@ -390,6 +566,16 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         updatedAt: now,
       };
       await services.goalUseCases.createGoal(newGoal);
+      const op = createSyncOperation({
+        entityType: 'goal',
+        entityId: newGoal.id,
+        operationType: 'create',
+        payload: newGoal as unknown as Record<string, unknown>,
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
       await refreshLedger();
     },
     [services, refreshLedger]
@@ -408,6 +594,16 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     async (id: string) => {
       if (!services) throw new Error('Database not ready');
       await services.goalUseCases.deleteGoal(id);
+      const op = createSyncOperation({
+        entityType: 'goal',
+        entityId: id,
+        operationType: 'delete',
+        payload: { id },
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
       await refreshLedger();
     },
     [services, refreshLedger]
@@ -735,6 +931,8 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     await services.driver.exec('DELETE FROM group_expenses');
     await services.driver.exec('DELETE FROM group_members');
     await services.driver.exec('DELETE FROM groups');
+    await services.outboxRepo.clear();
+    setPendingSyncCount(0);
     setActiveGroupId(null);
     activeGroupIdRef.current = null;
     setActiveGroup(null);
@@ -970,6 +1168,107 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setEditingTransaction(null);
   }, []);
 
+  const openAuthModal = useCallback(() => {
+    setIsAuthModalOpen(true);
+  }, []);
+
+  const closeAuthModal = useCallback(() => {
+    setIsAuthModalOpen(false);
+  }, []);
+
+  const syncNow = useCallback(async () => {
+    if (!services) return;
+    try {
+      setSyncStatus('syncing');
+      const dId = deviceIdRef.current || 'device_default';
+      const syncEngine = new SyncEngine(
+        services.outboxRepo,
+        defaultSyncServerClient,
+        services.syncStateRepo,
+        dId,
+        {
+          accountRepo: services.accountRepo,
+          txRepo: services.txRepo,
+          budgetRepo: services.budgetRepo,
+          goalRepo: services.goalRepo,
+          groupRepo: services.groupRepo,
+        }
+      );
+      await syncEngine.synchronize();
+      const now = new Date().toISOString();
+      await services.syncStateRepo.set('last_synced_at', now);
+      setLastSyncedAt(now);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
+      setSyncStatus('synced');
+      await refreshLedger();
+    } catch (err) {
+      console.error('Failed to sync:', err);
+      setSyncStatus('error');
+    }
+  }, [services, refreshLedger]);
+
+  const login = useCallback(
+    async (email: string, password: string) => {
+      if (!services) throw new Error('Database not ready');
+      const dId = deviceIdRef.current || 'device_default';
+      const res = await defaultAuthService.login({ email, password }, dId);
+      await services.syncStateRepo.setAuthToken(res.token);
+      await services.syncStateRepo.setActiveUser(res.user);
+      setUser(res.user);
+      setToken(res.token);
+      setIsGuest(false);
+      setIsAuthModalOpen(false);
+      await syncNow();
+    },
+    [services, syncNow]
+  );
+
+  const register = useCallback(
+    async (name: string, email: string, password: string) => {
+      if (!services) throw new Error('Database not ready');
+      const dId = deviceIdRef.current || 'device_default';
+      const res = await defaultAuthService.register({ name, email, password }, dId);
+      await services.syncStateRepo.setAuthToken(res.token);
+      await services.syncStateRepo.setActiveUser(res.user);
+
+      // Upgrade guest data to registered account
+      const migrationPlan = buildGuestMigrationPlan({
+        guestId: dId,
+        targetUserId: res.user.id,
+        accountsCount: accounts.length,
+        transactionsCount: transactions.length,
+        groupsCount: groups.length,
+        budgetsCount: budgets.length,
+      });
+      console.log('Guest migration plan executed:', migrationPlan);
+
+      setUser(res.user);
+      setToken(res.token);
+      setIsGuest(false);
+      setIsAuthModalOpen(false);
+      await syncNow();
+    },
+    [services, accounts.length, transactions.length, groups.length, budgets.length, syncNow]
+  );
+
+  const logout = useCallback(async () => {
+    if (!services) return;
+    if (token) {
+      try {
+        await defaultAuthService.logout(token);
+      } catch {
+        // ignore
+      }
+    }
+    await services.syncStateRepo.setAuthToken(null);
+    await services.syncStateRepo.setActiveUser(null);
+    setUser(null);
+    setToken(null);
+    setIsGuest(true);
+    setSyncStatus('idle');
+  }, [services, token]);
+
   const value = useMemo(
     () => ({
       isReady,
@@ -1021,6 +1320,20 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       openAddModal,
       openEditModal,
       closeAddModal,
+      user,
+      token,
+      deviceId,
+      isGuest,
+      syncStatus,
+      pendingSyncCount,
+      lastSyncedAt,
+      isAuthModalOpen,
+      openAuthModal,
+      closeAuthModal,
+      login,
+      register,
+      logout,
+      syncNow,
     }),
     [
       isReady,
@@ -1072,6 +1385,20 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       openAddModal,
       openEditModal,
       closeAddModal,
+      user,
+      token,
+      deviceId,
+      isGuest,
+      syncStatus,
+      pendingSyncCount,
+      lastSyncedAt,
+      isAuthModalOpen,
+      openAuthModal,
+      closeAuthModal,
+      login,
+      register,
+      logout,
+      syncNow,
     ]
   );
 

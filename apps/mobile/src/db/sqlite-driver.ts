@@ -8,6 +8,8 @@ import {
   SqliteBudgetRepository,
   SqliteGoalRepository,
   SqliteGroupRepository,
+  SqliteSyncStateRepository,
+  SqliteOutboxRepository,
 } from '@biyong/local-db';
 import {
   AccountUseCases,
@@ -53,6 +55,8 @@ export interface LedgerDatabaseServices {
   budgetRepo: SqliteBudgetRepository;
   goalRepo: SqliteGoalRepository;
   groupRepo: SqliteGroupRepository;
+  syncStateRepo: SqliteSyncStateRepository;
+  outboxRepo: SqliteOutboxRepository;
   accountUseCases: AccountUseCases;
   txUseCases: TransactionUseCases;
   categoryUseCases: CategoryUseCases;
@@ -86,6 +90,8 @@ export async function initDatabase(): Promise<LedgerDatabaseServices> {
   const budgetRepo = new SqliteBudgetRepository(driver);
   const goalRepo = new SqliteGoalRepository(driver);
   const groupRepo = new SqliteGroupRepository(driver);
+  const syncStateRepo = new SqliteSyncStateRepository(driver);
+  const outboxRepo = new SqliteOutboxRepository(driver);
 
   // Initialize use cases
   const accountUseCases = new AccountUseCases(accountRepo, txRepo);
@@ -106,6 +112,8 @@ export async function initDatabase(): Promise<LedgerDatabaseServices> {
     budgetRepo,
     goalRepo,
     groupRepo,
+    syncStateRepo,
+    outboxRepo,
     accountUseCases,
     txUseCases,
     categoryUseCases,

@@ -14,9 +14,11 @@
   "dependencies": {
     "@babel/runtime": "^7.25.0",
     "@biyong/application": "workspace:*",
+    "@biyong/auth": "workspace:*",
     "@biyong/domain": "workspace:*",
     "@biyong/local-db": "workspace:*",
     "@biyong/schemas": "workspace:*",
+    "@biyong/sync": "workspace:*",
     "@biyong/ui": "workspace:*",
     "@expo/metro-runtime": "~4.0.1",
     "@expo/vector-icons": "^14.0.4",

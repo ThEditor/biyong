@@ -84,6 +84,9 @@ importers:
       '@biyong/application':
         specifier: workspace:*
         version: link:../../packages/application
+      '@biyong/auth':
+        specifier: workspace:*
+        version: link:../../packages/auth
       '@biyong/domain':
         specifier: workspace:*
         version: link:../../packages/domain
@@ -93,6 +96,9 @@ importers:
       '@biyong/schemas':
         specifier: workspace:*
         version: link:../../packages/schemas
+      '@biyong/sync':
+        specifier: workspace:*
+        version: link:../../packages/sync
       '@biyong/ui':
         specifier: workspace:*
         version: link:../../packages/ui

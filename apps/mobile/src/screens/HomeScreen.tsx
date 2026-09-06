@@ -34,7 +34,38 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     categories,
     openAddModal,
     openEditModal,
+    isGuest,
+    syncStatus,
+    pendingSyncCount,
+    syncNow,
+    openAuthModal,
   } = useLedger();
+
+  let syncIcon: keyof typeof Ionicons.glyphMap = 'cloud-done-outline';
+  let syncLabel = 'Synced';
+  let syncColor = colors.success;
+
+  if (isGuest) {
+    syncIcon = 'cloud-offline-outline';
+    syncLabel = 'Guest';
+    syncColor = colors.textSecondary;
+  } else if (syncStatus === 'syncing') {
+    syncIcon = 'cloud-upload-outline';
+    syncLabel = 'Syncing...';
+    syncColor = colors.accentPrimary;
+  } else if (pendingSyncCount > 0) {
+    syncIcon = 'cloud-upload-outline';
+    syncLabel = `Sync (${pendingSyncCount})`;
+    syncColor = colors.warning;
+  }
+
+  const handleSyncPress = () => {
+    if (isGuest) {
+      openAuthModal();
+    } else {
+      syncNow();
+    }
+  };
 
   const activeAccounts = accounts.filter((a) => !a.isArchived);
   const recentTransactions = transactions.slice(0, 5);
@@ -78,19 +109,41 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             </Text>
           </VStack>
 
-          <TouchableOpacity
-            onPress={() => openAddModal()}
-            style={[
-              styles.headerAddBtn,
-              {
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-                borderRadius: tokens.radius.full,
-              },
-            ]}
-          >
-            <Feather name="plus" size={18} color={colors.textPrimary} />
-          </TouchableOpacity>
+          <HStack space="xs" alignItems="center">
+            {/* Compact Sync Status Pill Button */}
+            <TouchableOpacity
+              onPress={handleSyncPress}
+              style={[
+                styles.syncPill,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                  borderRadius: tokens.radius.full,
+                },
+              ]}
+              activeOpacity={0.7}
+            >
+              <Ionicons name={syncIcon} size={15} color={syncColor} />
+              <Text style={[styles.syncPillText, { color: colors.textPrimary }]}>
+                {syncLabel}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => openAddModal()}
+              style={[
+                styles.headerAddBtn,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                  borderRadius: tokens.radius.full,
+                },
+              ]}
+              activeOpacity={0.7}
+            >
+              <Feather name="plus" size={18} color={colors.textPrimary} />
+            </TouchableOpacity>
+          </HStack>
         </HStack>
 
         {/* Net Worth Card */}
@@ -417,5 +470,17 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 6,
+  },
+  syncPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    gap: 6,
+  },
+  syncPillText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
