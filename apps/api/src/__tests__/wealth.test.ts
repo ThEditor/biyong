@@ -232,7 +232,7 @@ describe('API: Phase 6 Wealth Endpoints (Investments, Liabilities & Net Worth)',
         currency: 'INR',
       }),
     });
-    const smallLiabId = (await createSmallLiabRes.json()).liability.id;
+    const smallLiabId = ((await createSmallLiabRes.json()) as any).liability.id;
 
     const overpayRes = await app.request(`/wealth/liabilities/${smallLiabId}/pay`, {
       method: 'POST',
@@ -303,13 +303,13 @@ describe('API: Phase 6 Wealth Endpoints (Investments, Liabilities & Net Worth)',
       headers: { Authorization: `Bearer ${tokenB}` },
     });
     expect(bInvestments.status).toBe(200);
-    expect((await bInvestments.json()).investments).toEqual([]);
+    expect(((await bInvestments.json()) as any).investments).toEqual([]);
 
     const bLiabilities = await app.request('/wealth/liabilities', {
       headers: { Authorization: `Bearer ${tokenB}` },
     });
     expect(bLiabilities.status).toBe(200);
-    expect((await bLiabilities.json()).liabilities).toEqual([]);
+    expect(((await bLiabilities.json()) as any).liabilities).toEqual([]);
 
     // 3. User B cannot edit User A's investment -> 403
     const editInvRes = await app.request(`/wealth/investments/${stockInvestmentId}`, {

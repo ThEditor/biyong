@@ -62,6 +62,9 @@ export const TransactionSchema = z.object({
   toAccountId: z.string().nullable().default(null), // Required for transfer
   isRecurring: z.boolean().default(false),
   recurringFrequency: z.enum(['daily', 'weekly', 'monthly', 'yearly']).nullable().default(null),
+  isReimbursable: z.boolean().default(false),
+  reimbursementStatus: z.enum(['unclaimed', 'pending', 'reimbursed']).nullable().default(null),
+  receiptAttachmentId: z.string().nullable().default(null),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -362,4 +365,175 @@ export const CreateSettlementRequestSchema = z.object({
   notes: z.string().nullable().default(null),
 });
 export type CreateSettlementRequest = z.infer<typeof CreateSettlementRequestSchema>;
+
+// ==========================================
+// PHASE 7 & 8: ADVANCED WORKFLOWS & INTELLIGENCE
+// ==========================================
+
+// Peer-to-Peer Debt (Lending & Borrowing)
+export const PeerDebtTypeSchema = z.enum(['lent', 'borrowed']);
+export type PeerDebtType = z.infer<typeof PeerDebtTypeSchema>;
+
+export const PeerDebtStatusSchema = z.enum(['active', 'settled']);
+export type PeerDebtStatus = z.infer<typeof PeerDebtStatusSchema>;
+
+export const PeerDebtSchema = z.object({
+  id: z.string().min(1),
+  personName: z.string().min(1),
+  type: PeerDebtTypeSchema, // 'lent' (they owe user) | 'borrowed' (user owes them)
+  originalAmountMinor: z.number().int().positive(),
+  remainingAmountMinor: z.number().int().nonnegative(),
+  currency: CurrencyCodeSchema.default('INR'),
+  date: z.string(),
+  dueDate: z.string().nullable().default(null),
+  notes: z.string().nullable().default(null),
+  status: PeerDebtStatusSchema.default('active'),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+export type PeerDebt = z.infer<typeof PeerDebtSchema>;
+
+export const PeerDebtRepaymentSchema = z.object({
+  id: z.string().min(1),
+  debtId: z.string().min(1),
+  amountMinor: z.number().int().positive(),
+  date: z.string(),
+  notes: z.string().nullable().default(null),
+  createdAt: z.string().datetime(),
+});
+export type PeerDebtRepayment = z.infer<typeof PeerDebtRepaymentSchema>;
+
+// Reimbursements
+export const ReimbursementStatusSchema = z.enum([
+  'pending',
+  'submitted',
+  'approved',
+  'reimbursed',
+  'rejected',
+]);
+export type ReimbursementStatus = z.infer<typeof ReimbursementStatusSchema>;
+
+export const ReimbursementClaimSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  category: z.enum(['work', 'travel', 'medical', 'insurance', 'other']).default('work'),
+  amountMinor: z.number().int().positive(),
+  currency: CurrencyCodeSchema.default('INR'),
+  transactionId: z.string().nullable().default(null),
+  status: ReimbursementStatusSchema.default('pending'),
+  submittedDate: z.string(),
+  settledDate: z.string().nullable().default(null),
+  notes: z.string().nullable().default(null),
+  receiptUri: z.string().nullable().default(null),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+export type ReimbursementClaim = z.infer<typeof ReimbursementClaimSchema>;
+
+// Recurring Subscriptions
+export const RecurringCadenceSchema = z.enum([
+  'weekly',
+  'monthly',
+  'quarterly',
+  'yearly',
+]);
+export type RecurringCadence = z.infer<typeof RecurringCadenceSchema>;
+
+export const SubscriptionItemSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  category: z.string().default('Subscriptions'),
+  amountMinor: z.number().int().positive(),
+  cadence: RecurringCadenceSchema.default('monthly'),
+  nextBillingDate: z.string(),
+  isAutoDetected: z.boolean().default(false),
+  status: z.enum(['active', 'paused', 'cancelled']).default('active'),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+export type SubscriptionItem = z.infer<typeof SubscriptionItemSchema>;
+
+// Receipt Attachment
+export const ReceiptAttachmentSchema = z.object({
+  id: z.string().min(1),
+  transactionId: z.string().min(1),
+  fileName: z.string().min(1),
+  fileType: z.string().default('image/jpeg'),
+  fileSizeBytes: z.number().int().nonnegative().default(0),
+  storageUri: z.string().min(1),
+  uploadedAt: z.string().datetime(),
+});
+export type ReceiptAttachment = z.infer<typeof ReceiptAttachmentSchema>;
+
+// Ledger Full Export & Import Model
+export const LedgerExportDataSchema = z.object({
+  version: z.literal('1.0'),
+  exportedAt: z.string().datetime(),
+  accounts: z.array(AccountSchema),
+  categories: z.array(CategorySchema),
+  transactions: z.array(TransactionSchema),
+  budgets: z.array(BudgetSchema),
+  goals: z.array(GoalSchema),
+  investments: z.array(InvestmentSchema),
+  liabilities: z.array(LiabilitySchema),
+  peerDebts: z.array(PeerDebtSchema).optional().default([]),
+  peerRepayments: z.array(PeerDebtRepaymentSchema).optional().default([]),
+  reimbursements: z.array(ReimbursementClaimSchema).optional().default([]),
+  subscriptions: z.array(SubscriptionItemSchema).optional().default([]),
+});
+export type LedgerExportData = z.infer<typeof LedgerExportDataSchema>;
+
+// Intelligence & Explanations Schemas
+export const FinancialAnomalySchema = z.object({
+  id: z.string().min(1),
+  type: z.enum(['duplicate_charge', 'spending_spike', 'unusual_merchant', 'upcoming_renewal']),
+  severity: z.enum(['info', 'warning', 'alert']),
+  title: z.string(),
+  description: z.string(),
+  amountMinor: z.number().int().optional(),
+  transactionId: z.string().optional(),
+  merchant: z.string().optional(),
+  category: z.string().optional(),
+  detectedAt: z.string().datetime(),
+});
+export type FinancialAnomaly = z.infer<typeof FinancialAnomalySchema>;
+
+export const CashFlowForecastPointSchema = z.object({
+  date: z.string(),
+  projectedBalanceMinor: z.number().int(),
+  expectedIncomeMinor: z.number().int().default(0),
+  expectedOutflowMinor: z.number().int().default(0),
+  description: z.string().optional(),
+});
+export type CashFlowForecastPoint = z.infer<typeof CashFlowForecastPointSchema>;
+
+export const AffordabilityCheckSchema = z.object({
+  itemCostMinor: z.number().int().positive(),
+  itemName: z.string(),
+  canAfford: z.boolean(),
+  currentLiquidBalanceMinor: z.number().int(),
+  safeSpendingLimitMinor: z.number().int(),
+  postPurchaseBufferMinor: z.number().int(),
+  verdict: z.string(),
+  recommendation: z.string(),
+});
+export type AffordabilityCheck = z.infer<typeof AffordabilityCheckSchema>;
+
+export const NaturalLanguageQueryResponseSchema = z.object({
+  query: z.string(),
+  matchedIntent: z.enum([
+    'why_spend_more',
+    'who_owes_me',
+    'investments_ytd',
+    'can_i_afford',
+    'why_networth_change',
+    'general_summary',
+    'unknown',
+  ]),
+  headline: z.string(),
+  explanation: z.string(),
+  supportingData: z.record(z.unknown()).optional(),
+});
+export type NaturalLanguageQueryResponse = z.infer<typeof NaturalLanguageQueryResponseSchema>;
+
 

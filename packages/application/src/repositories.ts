@@ -10,6 +10,11 @@ import type {
   Goal,
   Investment,
   Liability,
+  PeerDebt,
+  PeerDebtRepayment,
+  ReimbursementClaim,
+  SubscriptionItem,
+  ReceiptAttachment,
 } from '@biyong/schemas';
 
 import type { TransactionFilter } from '@biyong/domain';
@@ -80,4 +85,47 @@ export interface WealthRepository {
   findLiabilityById(id: string): Promise<Liability | null>;
   saveLiability(liab: Liability): Promise<void>;
   deleteLiability(id: string): Promise<void>;
+}
+
+export interface PeerDebtRepository {
+  create?(debt: PeerDebt): Promise<void>;
+  findById(id: string): Promise<PeerDebt | null>;
+  findAll(): Promise<PeerDebt[]>;
+  findByStatus?(status: PeerDebt['status']): Promise<PeerDebt[]>;
+  update?(debt: PeerDebt): Promise<void>;
+  save(debt: PeerDebt): Promise<void>;
+  delete(id: string): Promise<void>;
+  addRepayment(repayment: PeerDebtRepayment): Promise<void>;
+  getRepayments(debtId: string): Promise<PeerDebtRepayment[]>;
+  getAllRepayments?(): Promise<PeerDebtRepayment[]>;
+  deleteRepayment?(id: string): Promise<void>;
+}
+
+export interface ReimbursementRepository {
+  create?(claim: ReimbursementClaim): Promise<void>;
+  findById(id: string): Promise<ReimbursementClaim | null>;
+  findAll(): Promise<ReimbursementClaim[]>;
+  findByStatus?(status: ReimbursementClaim['status']): Promise<ReimbursementClaim[]>;
+  update?(claim: ReimbursementClaim): Promise<void>;
+  save(claim: ReimbursementClaim): Promise<void>;
+  delete(id: string): Promise<void>;
+}
+
+export interface SubscriptionRepository {
+  create?(subscription: SubscriptionItem): Promise<void>;
+  findById(id: string): Promise<SubscriptionItem | null>;
+  findAll(): Promise<SubscriptionItem[]>;
+  findByStatus?(status: SubscriptionItem['status']): Promise<SubscriptionItem[]>;
+  update?(subscription: SubscriptionItem): Promise<void>;
+  save(subscription: SubscriptionItem): Promise<void>;
+  delete(id: string): Promise<void>;
+}
+
+export interface ReceiptRepository {
+  save(receipt: ReceiptAttachment): Promise<void>;
+  create?(receipt: ReceiptAttachment): Promise<void>;
+  findById(id: string): Promise<ReceiptAttachment | null>;
+  findByTransactionId(transactionId: string): Promise<ReceiptAttachment[]>;
+  findAll?(): Promise<ReceiptAttachment[]>;
+  delete(id: string): Promise<void>;
 }

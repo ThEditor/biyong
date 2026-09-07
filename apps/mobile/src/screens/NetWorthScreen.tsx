@@ -83,6 +83,8 @@ export const NetWorthScreen: React.FC<NetWorthScreenProps> = ({ onBack }) => {
     wealthSummary,
     investments,
     liabilities,
+    peerDebts,
+    peerDebtSummary,
     investmentAnalytics,
     liabilityAnalytics,
     historicalNetWorth,
@@ -449,6 +451,84 @@ export const NetWorthScreen: React.FC<NetWorthScreenProps> = ({ onBack }) => {
                     Trajectory will appear as monthly snapshots accumulate.
                   </Text>
                 </Box>
+              )}
+            </Card>
+
+            {/* Peer-to-Peer Debt & Loans Card */}
+            <Card
+              backgroundColor={colors.surface}
+              borderColor={colors.border}
+              borderWidth={1}
+              borderRadius={tokens.radius.lg}
+              p={16}
+            >
+              <HStack justifyContent="space-between" alignItems="center" mb={12}>
+                <HStack space="xs" alignItems="center">
+                  <Feather name="users" size={16} color={colors.accentPrimary} />
+                  <Text color={colors.textPrimary} fontSize={14} fontWeight="700">
+                    Peer-to-Peer Loans
+                  </Text>
+                </HStack>
+                <Text color={colors.textSecondary} fontSize={12} fontWeight="600">
+                  Net: {(peerDebtSummary?.netPeerBalanceMinor ?? 0) >= 0 ? '+' : ''}{formatMoney(peerDebtSummary?.netPeerBalanceMinor ?? 0, 'INR')}
+                </Text>
+              </HStack>
+
+              <HStack justifyContent="space-between" alignItems="center">
+                <VStack>
+                  <Text color={colors.textSecondary} fontSize={11} fontWeight="600">
+                    MONEY LENT (RECEIVABLE)
+                  </Text>
+                  <Text color={colors.success} fontSize={15} fontWeight="700" mt={2}>
+                    +{formatMoney(peerDebtSummary?.totalLentMinor ?? 0, 'INR')}
+                  </Text>
+                  <Text color={colors.textMuted} fontSize={11} mt={1}>
+                    {peerDebtSummary?.activeLentCount ?? 0} active borrower{(peerDebtSummary?.activeLentCount ?? 0) === 1 ? '' : 's'}
+                  </Text>
+                </VStack>
+
+                <View style={{ width: 1, height: 32, backgroundColor: colors.border }} />
+
+                <VStack alignItems="flex-end">
+                  <Text color={colors.textSecondary} fontSize={11} fontWeight="600">
+                    MONEY BORROWED (PAYABLE)
+                  </Text>
+                  <Text color={colors.danger} fontSize={15} fontWeight="700" mt={2}>
+                    -{formatMoney(peerDebtSummary?.totalBorrowedMinor ?? 0, 'INR')}
+                  </Text>
+                  <Text color={colors.textMuted} fontSize={11} mt={1}>
+                    {peerDebtSummary?.activeBorrowedCount ?? 0} active lender{(peerDebtSummary?.activeBorrowedCount ?? 0) === 1 ? '' : 's'}
+                  </Text>
+                </VStack>
+              </HStack>
+
+              {peerDebts.length > 0 && (
+                <VStack space="xs" mt={12} pt={10} borderTopWidth={1} borderTopColor={colors.border}>
+                  {peerDebts.slice(0, 3).map((debt) => (
+                    <HStack key={debt.id} justifyContent="space-between" alignItems="center" py={4}>
+                      <HStack space="xs" alignItems="center">
+                        <View
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: 4,
+                            backgroundColor: debt.type === 'lent' ? colors.success : colors.danger,
+                          }}
+                        />
+                        <Text color={colors.textPrimary} fontSize={13} fontWeight="500">
+                          {debt.personName} ({debt.type === 'lent' ? 'Lent' : 'Borrowed'})
+                        </Text>
+                      </HStack>
+                      <Text
+                        color={debt.type === 'lent' ? colors.success : colors.danger}
+                        fontSize={13}
+                        fontWeight="600"
+                      >
+                        {debt.type === 'lent' ? '+' : '-'}{formatMoney(debt.remainingAmountMinor, debt.currency)}
+                      </Text>
+                    </HStack>
+                  ))}
+                </VStack>
               )}
             </Card>
           </VStack>

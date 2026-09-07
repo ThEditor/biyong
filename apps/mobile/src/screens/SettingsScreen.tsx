@@ -22,6 +22,7 @@ import {
 import {
   type AccentTheme,
 } from '@biyong/ui';
+import * as Clipboard from 'expo-clipboard';
 import { useAppTheme } from '../theme/ThemeContext';
 import { useLedger } from '../context/LedgerContext';
 
@@ -53,6 +54,10 @@ export const SettingsScreen: React.FC = () => {
     apiUrl,
     setApiUrl,
     testApiConnection,
+    exportFullLedger,
+    exportTransactionsCsv,
+    exportAccountsCsv,
+    importFullLedger,
   } = useLedger();
 
   const [inputUrl, setInputUrl] = React.useState(apiUrl);
@@ -161,6 +166,73 @@ export const SettingsScreen: React.FC = () => {
 
   const handleReplayOnboarding = () => {
     resetOnboarding();
+  };
+
+  const handleExportJson = async () => {
+    try {
+      const data = await exportFullLedger();
+      const jsonStr = JSON.stringify(data, null, 2);
+      await Clipboard.setStringAsync(jsonStr);
+      Alert.alert(
+        'Export Successful',
+        `Full JSON ledger copied to clipboard!\n\nExported: ${data.accounts.length} accounts, ${data.transactions.length} transactions, ${data.budgets.length} budgets, ${data.peerDebts.length} peer debts, ${data.subscriptions.length} subscriptions.`
+      );
+    } catch (err: any) {
+      Alert.alert('Export Failed', err?.message || 'Failed to export ledger.');
+    }
+  };
+
+  const handleExportTxCsv = async () => {
+    try {
+      const csv = await exportTransactionsCsv();
+      await Clipboard.setStringAsync(csv);
+      Alert.alert('CSV Copied', 'RFC 4180 Transactions CSV copied to clipboard!');
+    } catch (err: any) {
+      Alert.alert('Export Failed', err?.message || 'Failed to export CSV.');
+    }
+  };
+
+  const handleExportAccCsv = async () => {
+    try {
+      const csv = await exportAccountsCsv();
+      await Clipboard.setStringAsync(csv);
+      Alert.alert('CSV Copied', 'Accounts CSV copied to clipboard!');
+    } catch (err: any) {
+      Alert.alert('Export Failed', err?.message || 'Failed to export CSV.');
+    }
+  };
+
+  const handleImportClipboard = async () => {
+    try {
+      const clipboardText = await Clipboard.getStringAsync();
+      if (!clipboardText || !clipboardText.trim()) {
+        Alert.alert('Clipboard Empty', 'Please copy a valid Biyong JSON ledger backup to your clipboard first.');
+        return;
+      }
+      Alert.alert(
+        'Import Ledger',
+        'This will import accounts, transactions, budgets, peer debts, and subscriptions from your clipboard. Duplicate IDs will be safely merged. Continue?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Import',
+            onPress: async () => {
+              try {
+                const res = await importFullLedger(clipboardText.trim());
+                Alert.alert(
+                  'Import Successful',
+                  `Successfully imported and reconciled ${res.count} ledger records with 100% data fidelity.`
+                );
+              } catch (err: any) {
+                Alert.alert('Import Failed', err?.message || 'Invalid ledger format.');
+              }
+            },
+          },
+        ]
+      );
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to read clipboard.');
+    }
   };
 
   return (
@@ -747,6 +819,78 @@ export const SettingsScreen: React.FC = () => {
                     </Text>
                     <Text color={colors.textMuted} fontSize={11} mt={1}>
                       Populates sample accounts and transactions for quick exploration.
+                    </Text>
+                  </VStack>
+                </HStack>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleExportJson}
+                style={[
+                  styles.mgmtBtn,
+                  {
+                    backgroundColor: colors.surfaceSubtle,
+                    borderColor: colors.border,
+                    borderRadius: tokens.radius.sm,
+                  },
+                ]}
+              >
+                <HStack space="sm" alignItems="center">
+                  <Feather name="share" size={18} color={colors.accentPrimary} />
+                  <VStack flex={1}>
+                    <Text color={colors.textPrimary} fontSize={14} fontWeight="600">
+                      Export Full Ledger (JSON)
+                    </Text>
+                    <Text color={colors.textMuted} fontSize={11} mt={1}>
+                      Copies complete JSON backup with accounts, transactions, debts & subscriptions.
+                    </Text>
+                  </VStack>
+                </HStack>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleExportTxCsv}
+                style={[
+                  styles.mgmtBtn,
+                  {
+                    backgroundColor: colors.surfaceSubtle,
+                    borderColor: colors.border,
+                    borderRadius: tokens.radius.sm,
+                  },
+                ]}
+              >
+                <HStack space="sm" alignItems="center">
+                  <Feather name="file-text" size={18} color={colors.accentPrimary} />
+                  <VStack flex={1}>
+                    <Text color={colors.textPrimary} fontSize={14} fontWeight="600">
+                      Export Transactions (CSV)
+                    </Text>
+                    <Text color={colors.textMuted} fontSize={11} mt={1}>
+                      RFC 4180 standard spreadsheet export.
+                    </Text>
+                  </VStack>
+                </HStack>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleImportClipboard}
+                style={[
+                  styles.mgmtBtn,
+                  {
+                    backgroundColor: colors.surfaceSubtle,
+                    borderColor: colors.border,
+                    borderRadius: tokens.radius.sm,
+                  },
+                ]}
+              >
+                <HStack space="sm" alignItems="center">
+                  <Feather name="upload" size={18} color={colors.accentPrimary} />
+                  <VStack flex={1}>
+                    <Text color={colors.textPrimary} fontSize={14} fontWeight="600">
+                      Import Ledger from Clipboard
+                    </Text>
+                    <Text color={colors.textMuted} fontSize={11} mt={1}>
+                      Restore your data from a copied JSON backup.
                     </Text>
                   </VStack>
                 </HStack>

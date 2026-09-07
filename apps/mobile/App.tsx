@@ -21,6 +21,7 @@ import { GroupsScreen } from './src/screens/GroupsScreen';
 import { ReportsScreen } from './src/screens/ReportsScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { NetWorthScreen } from './src/screens/NetWorthScreen';
+import { IntelligenceScreen } from './src/screens/IntelligenceScreen';
 import { QuickAddModal } from './src/components/QuickAddModal';
 import { OnboardingModal } from './src/components/OnboardingModal';
 import { AuthModal } from './src/components/AuthModal';
@@ -33,7 +34,8 @@ type ScreenType =
   | 'budgets'
   | 'reports'
   | 'settings'
-  | 'networth';
+  | 'networth'
+  | 'intelligence';
 
 interface BottomTabItem {
   id: ScreenType;
@@ -102,6 +104,7 @@ function MainNavigator() {
             onNavigateToReports={() => setActiveScreen('reports')}
             onNavigateToPlan={() => setActiveScreen('budgets')}
             onNavigateToNetWorth={() => setActiveScreen('networth')}
+            onNavigateToIntelligence={() => setActiveScreen('intelligence')}
           />
         );
       case 'accounts':
@@ -118,6 +121,8 @@ function MainNavigator() {
         return <SettingsScreen />;
       case 'networth':
         return <NetWorthScreen onBack={() => setActiveScreen('home')} />;
+      case 'intelligence':
+        return <IntelligenceScreen onBack={() => setActiveScreen('home')} />;
     }
   };
 
@@ -126,7 +131,8 @@ function MainNavigator() {
     activeScreen === 'accounts' ||
     activeScreen === 'transactions' ||
     activeScreen === 'groups' ||
-    activeScreen === 'networth';
+    activeScreen === 'networth' ||
+    activeScreen === 'intelligence';
 
   return (
     <View

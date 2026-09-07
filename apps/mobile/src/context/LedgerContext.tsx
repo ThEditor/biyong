@@ -15,10 +15,19 @@ import type {
   SessionUser,
   SyncStatus,
   SyncOperation,
+  PeerDebt,
+  PeerDebtRepayment,
+  ReimbursementClaim,
+  SubscriptionItem,
+  FinancialAnomaly,
+  CashFlowForecastPoint,
+  NaturalLanguageQueryResponse,
+  LedgerExportData,
 } from '@biyong/schemas';
 import {
   canEditExpense,
   canDeleteExpense,
+  calculateNetWorth,
   type BudgetStatus,
   type GoalProgress,
   type FixedVsVariableSpending,
@@ -30,6 +39,10 @@ import {
   type InvestmentAnalytics,
   type LiabilityAnalytics,
   type HistoricalNetWorthPoint,
+  type PeerDebtSummary,
+  type ReimbursementSummary,
+  type PersonalSpendingBreakdown,
+  type SubscriptionBurnRate,
 } from '@biyong/domain';
 import type { AccountWithDerivedBalance } from '@biyong/application';
 import {
@@ -273,6 +286,40 @@ export interface LedgerContextValue {
   apiUrl: string;
   setApiUrl: (url: string) => Promise<void>;
   testApiConnection: (url?: string) => Promise<{ ok: boolean; message: string }>;
+
+  // Phase 7: Peer Lending & Borrowing
+  peerDebts: PeerDebt[];
+  peerDebtSummary: PeerDebtSummary | null;
+  createPeerDebt: (data: Omit<PeerDebt, 'id' | 'createdAt' | 'updatedAt'>) => Promise<PeerDebt>;
+  repayPeerDebt: (debtId: string, amountMinor: number, notes?: string) => Promise<void>;
+  deletePeerDebt: (id: string) => Promise<void>;
+
+  // Phase 7: Reimbursements
+  reimbursements: ReimbursementClaim[];
+  reimbursementSummary: ReimbursementSummary | null;
+  personalSpendingBreakdown: PersonalSpendingBreakdown | null;
+  createReimbursement: (data: Omit<ReimbursementClaim, 'id' | 'createdAt' | 'updatedAt'>) => Promise<ReimbursementClaim>;
+  updateReimbursementStatus: (id: string, status: ReimbursementClaim['status']) => Promise<void>;
+  deleteReimbursement: (id: string) => Promise<void>;
+
+  // Phase 7: Subscriptions & Recurring
+  subscriptions: SubscriptionItem[];
+  subscriptionBurnRate: SubscriptionBurnRate | null;
+  createSubscription: (data: Omit<SubscriptionItem, 'id' | 'createdAt' | 'updatedAt'>) => Promise<SubscriptionItem>;
+  updateSubscription: (data: SubscriptionItem) => Promise<void>;
+  deleteSubscription: (id: string) => Promise<void>;
+  detectSubscriptions: () => Promise<SubscriptionItem[]>;
+
+  // Phase 7: Full Data Export & Import
+  exportFullLedger: () => Promise<LedgerExportData>;
+  exportTransactionsCsv: () => Promise<string>;
+  exportAccountsCsv: () => Promise<string>;
+  importFullLedger: (data: LedgerExportData | string) => Promise<{ success: boolean; count: number }>;
+
+  // Phase 8: Financial Intelligence
+  anomalies: FinancialAnomaly[];
+  cashFlowForecast: CashFlowForecastPoint[];
+  queryIntelligence: (question: string) => Promise<NaturalLanguageQueryResponse>;
 }
 
 const LedgerContext = createContext<LedgerContextValue | null>(null);
@@ -296,6 +343,17 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [investmentAnalytics, setInvestmentAnalytics] = useState<InvestmentAnalytics | null>(null);
   const [liabilityAnalytics, setLiabilityAnalytics] = useState<LiabilityAnalytics | null>(null);
   const [historicalNetWorth, setHistoricalNetWorth] = useState<HistoricalNetWorthPoint[]>([]);
+
+  // Phase 7 & 8 State
+  const [peerDebts, setPeerDebts] = useState<PeerDebt[]>([]);
+  const [peerDebtSummary, setPeerDebtSummary] = useState<PeerDebtSummary | null>(null);
+  const [reimbursements, setReimbursements] = useState<ReimbursementClaim[]>([]);
+  const [reimbursementSummary, setReimbursementSummary] = useState<ReimbursementSummary | null>(null);
+  const [personalSpendingBreakdown, setPersonalSpendingBreakdown] = useState<PersonalSpendingBreakdown | null>(null);
+  const [subscriptions, setSubscriptions] = useState<SubscriptionItem[]>([]);
+  const [subscriptionBurnRate, setSubscriptionBurnRate] = useState<SubscriptionBurnRate | null>(null);
+  const [anomalies, setAnomalies] = useState<FinancialAnomaly[]>([]);
+  const [cashFlowForecast, setCashFlowForecast] = useState<CashFlowForecastPoint[]>([]);
 
   const [stats, setStats] = useState<DatabaseStats>({
     accountsCount: 0,
@@ -351,12 +409,20 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         fixedVar,
         trends,
         groupList,
-        wSummary,
         invList,
         liabList,
         invAnalytics,
         liabAnalytics,
         histNetWorth,
+        peerDebtList,
+        pDebtSummary,
+        reimbList,
+        rSummary,
+        personalBreakdown,
+        subList,
+        subBurn,
+        anomalyList,
+        flowForecast,
       ] = await Promise.all([
         services.accountUseCases.listAccountsWithDerivedBalances(true),
         services.txRepo.findAll(),
@@ -366,13 +432,31 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         services.analyticsUseCases.getFixedVsVariable(),
         services.analyticsUseCases.getSpendingTrends(6),
         services.groupUseCases.listGroups(),
-        services.wealthUseCases.getNetWorthSummary(),
         services.wealthUseCases.listInvestments(),
         services.wealthUseCases.listLiabilities(),
         services.wealthUseCases.getInvestmentAnalytics(),
         services.wealthUseCases.getLiabilityAnalytics(),
         services.wealthUseCases.getHistoricalNetWorth(6),
+        services.lendingUseCases.listPeerDebts(),
+        services.lendingUseCases.getPeerDebtSummary(),
+        services.reimbursementUseCases.listClaims(),
+        services.reimbursementUseCases.getSummary(),
+        services.reimbursementUseCases.getSpendingBreakdown(),
+        services.subscriptionUseCases.listSubscriptions(),
+        services.subscriptionUseCases.getBurnRate(),
+        services.intelligenceUseCases.getAnomalies(),
+        services.intelligenceUseCases.getCashFlowForecast(60),
       ]);
+
+      const cashBalances = (accsWithBalances as AccountWithDerivedBalance[]).map(
+        (a) => a.derivedBalanceMinor
+      );
+      const comprehensiveWealthSummary = calculateNetWorth(
+        cashBalances,
+        invList,
+        liabList,
+        peerDebtList
+      );
 
       setAccounts(accsWithBalances);
       setTransactions(txList);
@@ -382,13 +466,23 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setFixedVsVariable(fixedVar);
       setSpendingTrends(trends);
       setGroups(groupList);
-      setWealthSummary(wSummary);
+      setWealthSummary(comprehensiveWealthSummary);
       setInvestments(invList);
       setLiabilities(liabList);
       setInvestmentAnalytics(invAnalytics);
       setLiabilityAnalytics(liabAnalytics);
       setHistoricalNetWorth(histNetWorth);
-      setNetWorthMinor(wSummary.netWorthMinor);
+      setNetWorthMinor(comprehensiveWealthSummary.netWorthMinor);
+
+      setPeerDebts(peerDebtList);
+      setPeerDebtSummary(pDebtSummary);
+      setReimbursements(reimbList);
+      setReimbursementSummary(rSummary);
+      setPersonalSpendingBreakdown(personalBreakdown);
+      setSubscriptions(subList);
+      setSubscriptionBurnRate(subBurn);
+      setAnomalies(anomalyList);
+      setCashFlowForecast(flowForecast);
 
       setStats({
         accountsCount: accsWithBalances.length,
@@ -427,12 +521,20 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           fixedVar,
           trends,
           groupList,
-          wSummary,
           invList,
           liabList,
           invAnalytics,
           liabAnalytics,
           histNetWorth,
+          peerDebtList,
+          pDebtSummary,
+          reimbList,
+          rSummary,
+          personalBreakdown,
+          subList,
+          subBurn,
+          anomalyList,
+          flowForecast,
         ] = await Promise.all([
           s.accountUseCases.listAccountsWithDerivedBalances(true),
           s.txRepo.findAll(),
@@ -442,13 +544,31 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           s.analyticsUseCases.getFixedVsVariable(),
           s.analyticsUseCases.getSpendingTrends(6),
           s.groupUseCases.listGroups(),
-          s.wealthUseCases.getNetWorthSummary(),
           s.wealthUseCases.listInvestments(),
           s.wealthUseCases.listLiabilities(),
           s.wealthUseCases.getInvestmentAnalytics(),
           s.wealthUseCases.getLiabilityAnalytics(),
           s.wealthUseCases.getHistoricalNetWorth(6),
+          s.lendingUseCases.listPeerDebts(),
+          s.lendingUseCases.getPeerDebtSummary(),
+          s.reimbursementUseCases.listClaims(),
+          s.reimbursementUseCases.getSummary(),
+          s.reimbursementUseCases.getSpendingBreakdown(),
+          s.subscriptionUseCases.listSubscriptions(),
+          s.subscriptionUseCases.getBurnRate(),
+          s.intelligenceUseCases.getAnomalies(),
+          s.intelligenceUseCases.getCashFlowForecast(60),
         ]);
+
+        const cashBalances = (accsWithBalances as AccountWithDerivedBalance[]).map(
+          (a) => a.derivedBalanceMinor
+        );
+        const comprehensiveWealthSummary = calculateNetWorth(
+          cashBalances,
+          invList,
+          liabList,
+          peerDebtList
+        );
 
         setAccounts(accsWithBalances);
         setTransactions(txList);
@@ -458,13 +578,23 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setFixedVsVariable(fixedVar);
         setSpendingTrends(trends);
         setGroups(groupList);
-        setWealthSummary(wSummary);
+        setWealthSummary(comprehensiveWealthSummary);
         setInvestments(invList);
         setLiabilities(liabList);
         setInvestmentAnalytics(invAnalytics);
         setLiabilityAnalytics(liabAnalytics);
         setHistoricalNetWorth(histNetWorth);
-        setNetWorthMinor(wSummary.netWorthMinor);
+        setNetWorthMinor(comprehensiveWealthSummary.netWorthMinor);
+
+        setPeerDebts(peerDebtList);
+        setPeerDebtSummary(pDebtSummary);
+        setReimbursements(reimbList);
+        setReimbursementSummary(rSummary);
+        setPersonalSpendingBreakdown(personalBreakdown);
+        setSubscriptions(subList);
+        setSubscriptionBurnRate(subBurn);
+        setAnomalies(anomalyList);
+        setCashFlowForecast(flowForecast);
 
         setStats({
           accountsCount: accsWithBalances.length,
@@ -919,6 +1049,290 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     [services, refreshLedger]
   );
 
+  // Phase 7: Peer Lending & Borrowing Actions
+  const createPeerDebt = useCallback(
+    async (data: Omit<PeerDebt, 'id' | 'createdAt' | 'updatedAt'>): Promise<PeerDebt> => {
+      if (!services) throw new Error('Database not ready');
+      const now = new Date().toISOString();
+      const newDebt: PeerDebt = {
+        ...data,
+        id: generateId('debt'),
+        createdAt: now,
+        updatedAt: now,
+      };
+      await services.lendingUseCases.createPeerDebt(newDebt);
+      const op = createSyncOperation({
+        entityType: 'peer_debt',
+        entityId: newDebt.id,
+        operationType: 'create',
+        payload: newDebt as unknown as Record<string, unknown>,
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
+      await refreshLedger();
+      return newDebt;
+    },
+    [services, refreshLedger]
+  );
+
+  const repayPeerDebt = useCallback(
+    async (debtId: string, amountMinor: number, notes?: string): Promise<void> => {
+      if (!services) throw new Error('Database not ready');
+      const res = await services.lendingUseCases.recordRepayment(debtId, amountMinor, notes);
+      const opDebt = createSyncOperation({
+        entityType: 'peer_debt',
+        entityId: res.updatedDebt.id,
+        operationType: 'update',
+        payload: res.updatedDebt as unknown as Record<string, unknown>,
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(opDebt);
+      const opRepay = createSyncOperation({
+        entityType: 'peer_debt_repayment',
+        entityId: res.repayment.id,
+        operationType: 'create',
+        payload: res.repayment as unknown as Record<string, unknown>,
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(opRepay);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
+      await refreshLedger();
+    },
+    [services, refreshLedger]
+  );
+
+  const deletePeerDebt = useCallback(
+    async (id: string): Promise<void> => {
+      if (!services) throw new Error('Database not ready');
+      await services.lendingUseCases.deletePeerDebt(id);
+      const op = createSyncOperation({
+        entityType: 'peer_debt',
+        entityId: id,
+        operationType: 'delete',
+        payload: { id },
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
+      await refreshLedger();
+    },
+    [services, refreshLedger]
+  );
+
+  // Phase 7: Reimbursement Actions
+  const createReimbursement = useCallback(
+    async (data: Omit<ReimbursementClaim, 'id' | 'createdAt' | 'updatedAt'>): Promise<ReimbursementClaim> => {
+      if (!services) throw new Error('Database not ready');
+      const now = new Date().toISOString();
+      const newClaim: ReimbursementClaim = {
+        ...data,
+        id: generateId('claim'),
+        createdAt: now,
+        updatedAt: now,
+      };
+      await services.reimbursementUseCases.createClaim(newClaim);
+      const op = createSyncOperation({
+        entityType: 'reimbursement',
+        entityId: newClaim.id,
+        operationType: 'create',
+        payload: newClaim as unknown as Record<string, unknown>,
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
+      await refreshLedger();
+      return newClaim;
+    },
+    [services, refreshLedger]
+  );
+
+  const updateReimbursementStatus = useCallback(
+    async (id: string, status: ReimbursementClaim['status']): Promise<void> => {
+      if (!services) throw new Error('Database not ready');
+      if (status === 'reimbursed') {
+        await services.reimbursementUseCases.markClaimReimbursed(id);
+      } else {
+        const claim = await services.reimbursementUseCases.getClaim(id);
+        if (claim) {
+          const updated = { ...claim, status, updatedAt: new Date().toISOString() };
+          await services.reimbursementUseCases.updateClaim(updated);
+        }
+      }
+      const claim = await services.reimbursementUseCases.getClaim(id);
+      if (claim) {
+        const op = createSyncOperation({
+          entityType: 'reimbursement',
+          entityId: claim.id,
+          operationType: 'update',
+          payload: claim as unknown as Record<string, unknown>,
+          deviceId: deviceIdRef.current || 'device_default',
+        });
+        await services.outboxRepo.enqueue(op);
+      }
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
+      await refreshLedger();
+    },
+    [services, refreshLedger]
+  );
+
+  const deleteReimbursement = useCallback(
+    async (id: string): Promise<void> => {
+      if (!services) throw new Error('Database not ready');
+      await services.reimbursementUseCases.deleteClaim(id);
+      const op = createSyncOperation({
+        entityType: 'reimbursement',
+        entityId: id,
+        operationType: 'delete',
+        payload: { id },
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
+      await refreshLedger();
+    },
+    [services, refreshLedger]
+  );
+
+  // Phase 7: Subscriptions Actions
+  const createSubscription = useCallback(
+    async (data: Omit<SubscriptionItem, 'id' | 'createdAt' | 'updatedAt'>): Promise<SubscriptionItem> => {
+      if (!services) throw new Error('Database not ready');
+      const now = new Date().toISOString();
+      const newSub: SubscriptionItem = {
+        ...data,
+        id: generateId('sub'),
+        createdAt: now,
+        updatedAt: now,
+      };
+      await services.subscriptionUseCases.createSubscription(newSub);
+      const op = createSyncOperation({
+        entityType: 'subscription',
+        entityId: newSub.id,
+        operationType: 'create',
+        payload: newSub as unknown as Record<string, unknown>,
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
+      await refreshLedger();
+      return newSub;
+    },
+    [services, refreshLedger]
+  );
+
+  const updateSubscription = useCallback(
+    async (data: SubscriptionItem): Promise<void> => {
+      if (!services) throw new Error('Database not ready');
+      const updated: SubscriptionItem = {
+        ...data,
+        updatedAt: new Date().toISOString(),
+      };
+      await services.subscriptionUseCases.updateSubscription(updated);
+      const op = createSyncOperation({
+        entityType: 'subscription',
+        entityId: updated.id,
+        operationType: 'update',
+        payload: updated as unknown as Record<string, unknown>,
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
+      await refreshLedger();
+    },
+    [services, refreshLedger]
+  );
+
+  const deleteSubscription = useCallback(
+    async (id: string): Promise<void> => {
+      if (!services) throw new Error('Database not ready');
+      await services.subscriptionUseCases.deleteSubscription(id);
+      const op = createSyncOperation({
+        entityType: 'subscription',
+        entityId: id,
+        operationType: 'delete',
+        payload: { id },
+        deviceId: deviceIdRef.current || 'device_default',
+      });
+      await services.outboxRepo.enqueue(op);
+      const pCount = await services.outboxRepo.getPendingCount();
+      setPendingSyncCount(pCount);
+      await refreshLedger();
+    },
+    [services, refreshLedger]
+  );
+
+  const detectSubscriptions = useCallback(async (): Promise<SubscriptionItem[]> => {
+    if (!services) return [];
+    const detected = await services.subscriptionUseCases.detectSubscriptions();
+    const created: SubscriptionItem[] = [];
+    for (const item of detected) {
+      const now = new Date().toISOString();
+      const sub: SubscriptionItem = {
+        ...item,
+        id: generateId('sub'),
+        createdAt: now,
+        updatedAt: now,
+      };
+      await services.subscriptionUseCases.createSubscription(sub);
+      created.push(sub);
+    }
+    await refreshLedger();
+    return created;
+  }, [services, refreshLedger]);
+
+  // Phase 7: Full Data Export & Import
+  const exportFullLedger = useCallback(async (): Promise<LedgerExportData> => {
+    if (!services) throw new Error('Database not ready');
+    return services.exportImportUseCases.exportFullLedger();
+  }, [services]);
+
+  const exportTransactionsCsv = useCallback(async (): Promise<string> => {
+    if (!services) throw new Error('Database not ready');
+    return services.exportImportUseCases.exportTransactionsCsv();
+  }, [services]);
+
+  const exportAccountsCsv = useCallback(async (): Promise<string> => {
+    if (!services) throw new Error('Database not ready');
+    return services.exportImportUseCases.exportAccountsCsv();
+  }, [services]);
+
+  const importFullLedger = useCallback(
+    async (data: LedgerExportData | string): Promise<{ success: boolean; count: number }> => {
+      if (!services) throw new Error('Database not ready');
+      const jsonStr = typeof data === 'string' ? data : JSON.stringify(data);
+      const res = await services.exportImportUseCases.importAndReconcile(jsonStr);
+      await refreshLedger();
+      const count = res.reconciled
+        ? res.reconciled.accounts.length +
+          res.reconciled.transactions.length +
+          res.reconciled.budgets.length +
+          res.reconciled.goals.length +
+          res.reconciled.peerDebts.length +
+          res.reconciled.subscriptions.length
+        : 0;
+      return { success: res.success, count };
+    },
+    [services, refreshLedger]
+  );
+
+  // Phase 8: Financial Intelligence
+  const queryIntelligence = useCallback(
+    async (question: string): Promise<NaturalLanguageQueryResponse> => {
+      if (!services) throw new Error('Database not ready');
+      return services.intelligenceUseCases.askQuestion(question);
+    },
+    [services]
+  );
+
   const seedDemoData = useCallback(async () => {
     if (!services) return;
     const now = new Date();
@@ -948,6 +1362,9 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         toAccountId: null,
         isRecurring: true,
         recurringFrequency: 'monthly',
+        isReimbursable: false,
+        reimbursementStatus: null,
+        receiptAttachmentId: null,
       },
       {
         accountId: bankAcc.id,
@@ -962,6 +1379,9 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         toAccountId: null,
         isRecurring: true,
         recurringFrequency: 'monthly',
+        isReimbursable: false,
+        reimbursementStatus: null,
+        receiptAttachmentId: null,
       },
       {
         accountId: bankAcc.id,
@@ -976,6 +1396,9 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         toAccountId: null,
         isRecurring: false,
         recurringFrequency: null,
+        isReimbursable: false,
+        reimbursementStatus: null,
+        receiptAttachmentId: null,
       },
       {
         accountId: bankAcc.id,
@@ -990,6 +1413,9 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         toAccountId: cashAcc.id,
         isRecurring: false,
         recurringFrequency: null,
+        isReimbursable: false,
+        reimbursementStatus: null,
+        receiptAttachmentId: null,
       },
       {
         accountId: cashAcc.id,
@@ -1004,6 +1430,9 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         toAccountId: null,
         isRecurring: false,
         recurringFrequency: null,
+        isReimbursable: true,
+        reimbursementStatus: 'pending',
+        receiptAttachmentId: null,
       },
       {
         accountId: bankAcc.id,
@@ -1018,6 +1447,9 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         toAccountId: null,
         isRecurring: false,
         recurringFrequency: null,
+        isReimbursable: true,
+        reimbursementStatus: 'pending',
+        receiptAttachmentId: null,
       },
     ];
 
@@ -2372,6 +2804,32 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       isTransactionSplitInGroup,
       getSplitGroupIdsForTransaction,
       getGroupMembers,
+
+      // Phase 7 & 8
+      peerDebts,
+      peerDebtSummary,
+      createPeerDebt,
+      repayPeerDebt,
+      deletePeerDebt,
+      reimbursements,
+      reimbursementSummary,
+      personalSpendingBreakdown,
+      createReimbursement,
+      updateReimbursementStatus,
+      deleteReimbursement,
+      subscriptions,
+      subscriptionBurnRate,
+      createSubscription,
+      updateSubscription,
+      deleteSubscription,
+      detectSubscriptions,
+      exportFullLedger,
+      exportTransactionsCsv,
+      exportAccountsCsv,
+      importFullLedger,
+      anomalies,
+      cashFlowForecast,
+      queryIntelligence,
     }),
     [
       isReady,
@@ -2459,6 +2917,30 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       isTransactionSplitInGroup,
       getSplitGroupIdsForTransaction,
       getGroupMembers,
+      peerDebts,
+      peerDebtSummary,
+      createPeerDebt,
+      repayPeerDebt,
+      deletePeerDebt,
+      reimbursements,
+      reimbursementSummary,
+      personalSpendingBreakdown,
+      createReimbursement,
+      updateReimbursementStatus,
+      deleteReimbursement,
+      subscriptions,
+      subscriptionBurnRate,
+      createSubscription,
+      updateSubscription,
+      deleteSubscription,
+      detectSubscriptions,
+      exportFullLedger,
+      exportTransactionsCsv,
+      exportAccountsCsv,
+      importFullLedger,
+      anomalies,
+      cashFlowForecast,
+      queryIntelligence,
     ]
   );
 

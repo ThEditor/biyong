@@ -1,4 +1,4 @@
-import type { Investment, Liability, Transaction } from '@biyong/schemas';
+import type { Investment, Liability, Transaction, PeerDebt } from '@biyong/schemas';
 
 export interface WealthSummary {
   cashBankAssetsMinor: number;
@@ -55,16 +55,33 @@ export interface HistoricalNetWorthPoint {
 export function calculateNetWorth(
   cashBankBalancesMinor: number[],
   investments: Investment[],
-  liabilities: Liability[]
+  liabilities: Liability[],
+  peerDebts?: PeerDebt[]
 ): WealthSummary {
   const cashBankAssetsMinor = cashBankBalancesMinor.reduce((acc, val) => acc + val, 0);
   const investmentsMinor = investments.reduce((acc, inv) => acc + inv.currentValueMinor, 0);
-  const totalAssetsMinor = cashBankAssetsMinor + investmentsMinor;
 
-  const totalLiabilitiesMinor = liabilities.reduce(
-    (acc, liab) => acc + liab.remainingAmountMinor,
-    0
-  );
+  let peerReceivablesMinor = 0;
+  let peerPayablesMinor = 0;
+  if (peerDebts && peerDebts.length > 0) {
+    for (const debt of peerDebts) {
+      if (debt.status === 'active') {
+        if (debt.type === 'lent') {
+          peerReceivablesMinor += debt.remainingAmountMinor;
+        } else if (debt.type === 'borrowed') {
+          peerPayablesMinor += debt.remainingAmountMinor;
+        }
+      }
+    }
+  }
+
+  const totalAssetsMinor = cashBankAssetsMinor + investmentsMinor + peerReceivablesMinor;
+
+  const totalLiabilitiesMinor =
+    liabilities.reduce(
+      (acc, liab) => acc + liab.remainingAmountMinor,
+      0
+    ) + peerPayablesMinor;
 
   const netWorthMinor = totalAssetsMinor - totalLiabilitiesMinor;
 
@@ -72,6 +89,10 @@ export function calculateNetWorth(
   const allocationMap = new Map<string, number>();
   if (cashBankAssetsMinor > 0) {
     allocationMap.set('Cash & Bank', cashBankAssetsMinor);
+  }
+
+  if (peerReceivablesMinor > 0) {
+    allocationMap.set('Peer Receivables', peerReceivablesMinor);
   }
 
   for (const inv of investments) {

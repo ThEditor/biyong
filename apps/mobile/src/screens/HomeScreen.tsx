@@ -26,6 +26,7 @@ export interface HomeScreenProps {
   onNavigateToReports?: () => void;
   onNavigateToPlan?: () => void;
   onNavigateToNetWorth?: () => void;
+  onNavigateToIntelligence?: () => void;
 }
 
 const MONTH_NAMES = [
@@ -50,6 +51,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onNavigateToReports,
   onNavigateToPlan,
   onNavigateToNetWorth,
+  onNavigateToIntelligence,
 }) => {
   const { colors, tokens } = useAppTheme();
   const {
@@ -59,6 +61,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     transactions,
     categories,
     budgets,
+    peerDebtSummary,
+    subscriptionBurnRate,
+    reimbursementSummary,
+    anomalies,
     openAddModal,
     openEditModal,
     isGuest,
@@ -410,6 +416,62 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 </VStack>
                 <Feather name="chevron-right" size={16} color={colors.textSecondary} />
               </HStack>
+            </HStack>
+          </Card>
+        </TouchableOpacity>
+
+        {/* Intelligence & Advanced Workflows Hub Banner */}
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => onNavigateToIntelligence?.()}
+        >
+          <Card
+            backgroundColor={colors.surface}
+            borderColor={anomalies.length > 0 ? colors.warning : colors.border}
+            borderWidth={1}
+            borderRadius={tokens.radius.lg}
+            p={tokens.spacing.md}
+          >
+            <HStack justifyContent="space-between" alignItems="center">
+              <HStack space="sm" alignItems="center" flex={1}>
+                <View
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    backgroundColor: anomalies.length > 0 ? 'rgba(245, 158, 11, 0.15)' : 'rgba(99, 102, 241, 0.12)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Feather
+                    name={anomalies.length > 0 ? 'alert-triangle' : 'zap'}
+                    size={18}
+                    color={anomalies.length > 0 ? colors.warning : '#6366F1'}
+                  />
+                </View>
+                <VStack flex={1}>
+                  <HStack space="xs" alignItems="center">
+                    <Text color={colors.textSecondary} fontSize={11} fontWeight="700" letterSpacing={0.5} textTransform="uppercase">
+                      Intelligence & Workflows
+                    </Text>
+                    {anomalies.length > 0 && (
+                      <Badge backgroundColor="rgba(245, 158, 11, 0.2)" borderRadius={tokens.radius.full} px={6} py={1}>
+                        <BadgeText color={colors.warning} fontSize={10} fontWeight="700">
+                          {anomalies.length} Alert{anomalies.length > 1 ? 's' : ''}
+                        </BadgeText>
+                      </Badge>
+                    )}
+                  </HStack>
+                  <Text color={colors.textPrimary} fontSize={13} fontWeight="600" mt={2} numberOfLines={1}>
+                    {anomalies.length > 0
+                      ? `${anomalies[0].title} (${anomalies.length} anomaly detected)`
+                      : `Natural language queries, runway & debt tracker`}
+                  </Text>
+                </VStack>
+              </HStack>
+
+              <Feather name="chevron-right" size={16} color={colors.textSecondary} />
             </HStack>
           </Card>
         </TouchableOpacity>

@@ -48,6 +48,7 @@ export const QuickAddModal: React.FC = () => {
   const [recurringFrequency, setRecurringFrequency] = useState<
     'daily' | 'weekly' | 'monthly' | 'yearly' | null
   >(null);
+  const [isReimbursable, setIsReimbursable] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -76,6 +77,7 @@ export const QuickAddModal: React.FC = () => {
       setDate(editingTransaction.date.slice(0, 10));
       setIsRecurring(editingTransaction.isRecurring);
       setRecurringFrequency(editingTransaction.recurringFrequency);
+      setIsReimbursable(editingTransaction.isReimbursable ?? false);
     } else {
       setType(modalInitialType);
       setAmountStr('');
@@ -89,6 +91,7 @@ export const QuickAddModal: React.FC = () => {
       setDate(getTodayStr());
       setIsRecurring(false);
       setRecurringFrequency(null);
+      setIsReimbursable(false);
     }
     setError(null);
   }, [isAddModalOpen, editingTransaction, modalInitialType, activeAccounts.length]);
@@ -138,6 +141,11 @@ export const QuickAddModal: React.FC = () => {
           date: effectiveDate,
           isRecurring,
           recurringFrequency: isRecurring ? recurringFrequency ?? 'monthly' : null,
+          isReimbursable,
+          reimbursementStatus: isReimbursable
+            ? editingTransaction.reimbursementStatus ?? 'pending'
+            : null,
+          receiptAttachmentId: editingTransaction.receiptAttachmentId ?? null,
         });
       } else {
         await createTransaction({
@@ -153,6 +161,9 @@ export const QuickAddModal: React.FC = () => {
           subcategory: null,
           isRecurring,
           recurringFrequency: isRecurring ? recurringFrequency ?? 'monthly' : null,
+          isReimbursable,
+          reimbursementStatus: isReimbursable ? 'pending' : null,
+          receiptAttachmentId: null,
         });
       }
       closeAddModal();
@@ -544,6 +555,37 @@ export const QuickAddModal: React.FC = () => {
                 </HStack>
               )}
             </VStack>
+
+            {/* Reimbursable Option */}
+            {type === 'expense' && (
+              <VStack space="xs">
+                <TouchableOpacity
+                  onPress={() => setIsReimbursable(!isReimbursable)}
+                  style={styles.recurringToggleRow}
+                >
+                  <Box
+                    width={20}
+                    height={20}
+                    borderWidth={1.5}
+                    borderRadius={4}
+                    borderColor={colors.accentPrimary}
+                    backgroundColor={isReimbursable ? colors.accentPrimary : 'transparent'}
+                    alignItems="center"
+                    justifyContent="center"
+                    mr={10}
+                  >
+                    {isReimbursable && (
+                      <Text color={colors.accentForeground} fontSize={12} fontWeight="bold">
+                        ✓
+                      </Text>
+                    )}
+                  </Box>
+                  <Text color={colors.textPrimary} fontSize={14} fontWeight="600">
+                    Reimbursable (Work / Travel Claim)
+                  </Text>
+                </TouchableOpacity>
+              </VStack>
+            )}
 
             {/* Submit Button */}
             <TouchableOpacity

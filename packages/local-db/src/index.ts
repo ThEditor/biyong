@@ -9,3 +9,7 @@ export * from './repositories/goal-repository.js';
 export * from './repositories/wealth-repository.js';
 export * from './repositories/outbox-repository.js';
 export * from './repositories/sync-state-repository.js';
+export * from './repositories/peer-debt-repository.js';
+export * from './repositories/reimbursement-repository.js';
+export * from './repositories/subscription-repository.js';
+export * from './repositories/receipt-repository.js';

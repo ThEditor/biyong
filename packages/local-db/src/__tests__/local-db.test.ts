@@ -107,6 +107,9 @@ describe('Local DB: SQLite Schema & Repositories', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -163,6 +166,7 @@ describe('Local DB: SQLite Schema & Repositories', () => {
       currency: 'INR',
       date: '2026-09-06',
       createdByMemberId: 'm1',
+      createdByUserId: null,
       payers: [{ memberId: 'm1', amountMinor: 800000 }],
       splitMethod: 'equal',
       allocations: [{ memberId: 'm1' }, { memberId: 'm2' }],
@@ -296,6 +300,9 @@ describe('Local DB: SQLite Schema & Repositories', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: '2026-09-01T12:00:00.000Z',
       updatedAt: '2026-09-01T12:00:00.000Z',
     };
@@ -314,6 +321,9 @@ describe('Local DB: SQLite Schema & Repositories', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: '2026-09-03T10:00:00.000Z',
       updatedAt: '2026-09-03T10:00:00.000Z',
     };
@@ -332,6 +342,9 @@ describe('Local DB: SQLite Schema & Repositories', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: '2026-09-05T09:00:00.000Z',
       updatedAt: '2026-09-05T09:00:00.000Z',
     };
@@ -350,6 +363,9 @@ describe('Local DB: SQLite Schema & Repositories', () => {
       toAccountId: 'acc-savings',
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: '2026-09-06T15:00:00.000Z',
       updatedAt: '2026-09-06T15:00:00.000Z',
     };

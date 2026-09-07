@@ -12,6 +12,11 @@ import {
   CreateSettlementRequestSchema,
   InvestmentSchema,
   LiabilitySchema,
+  PeerDebtSchema,
+  PeerDebtRepaymentSchema,
+  ReimbursementClaimSchema,
+  SubscriptionItemSchema,
+  LedgerExportDataSchema,
   type Group,
   type GroupMember,
   type GroupExpense,
@@ -19,6 +24,16 @@ import {
   type GroupInvitation,
   type Investment,
   type Liability,
+  type PeerDebt,
+  type PeerDebtRepayment,
+  type ReimbursementClaim,
+  type SubscriptionItem,
+  type LedgerExportData,
+  type Account,
+  type Category,
+  type Transaction,
+  type Budget,
+  type Goal,
 } from '@biyong/schemas';
 import {
   canEditExpense,
@@ -29,6 +44,12 @@ import {
   buildDependencyGraph,
   explainMemberSettlement,
   calculateNetWorth,
+  calculatePeerDebtSummary,
+  calculateReimbursementSummary,
+  calculateSubscriptionBurnRate,
+  processFinancialQuery,
+  forecastCashFlow,
+  detectAnomalies,
 } from '@biyong/domain';
 import { randomUUID } from 'node:crypto';
 
@@ -63,6 +84,17 @@ export function createApp() {
   // In-memory store for wealth: investments and liabilities (Phase 6)
   const investmentsMap = new Map<string, Investment & { userId: string }>();
   const liabilitiesMap = new Map<string, Liability & { userId: string }>();
+
+  // In-memory store for Phase 7 & 8 (debts, reimbursements, subscriptions, ledger)
+  const peerDebtsMap = new Map<string, PeerDebt & { userId: string }>();
+  const peerRepaymentsMap = new Map<string, PeerDebtRepayment[]>(); // debtId -> repayments
+  const reimbursementsMap = new Map<string, ReimbursementClaim & { userId: string }>();
+  const subscriptionsMap = new Map<string, SubscriptionItem & { userId: string }>();
+  const accountsMap = new Map<string, Account & { userId: string }>();
+  const categoriesMap = new Map<string, Category & { userId: string }>();
+  const transactionsMap = new Map<string, Transaction & { userId: string }>();
+  const budgetsMap = new Map<string, Budget & { userId: string }>();
+  const goalsMap = new Map<string, Goal & { userId: string }>();
 
   // Helper to authenticate request from Authorization header
   function getAuthUser(c: any): { id: string; email: string; name: string } | null {
@@ -165,6 +197,43 @@ export function createApp() {
 
       syncedOpsMap.set(op.id, op);
       syncedIds.push(op.id);
+
+      const authUser = getAuthUser(c);
+      const opUserId = authUser?.id || (op.payload as any)?.userId || 'default';
+      const payload = op.payload as any;
+      if (payload) {
+        if (op.entityType === 'account') {
+          if (op.operationType === 'delete') accountsMap.delete(op.entityId);
+          else accountsMap.set(op.entityId, { ...payload, userId: opUserId });
+        } else if (op.entityType === 'category') {
+          if (op.operationType === 'delete') categoriesMap.delete(op.entityId);
+          else categoriesMap.set(op.entityId, { ...payload, userId: opUserId });
+        } else if (op.entityType === 'transaction') {
+          if (op.operationType === 'delete') transactionsMap.delete(op.entityId);
+          else transactionsMap.set(op.entityId, { ...payload, userId: opUserId });
+        } else if (op.entityType === 'budget') {
+          if (op.operationType === 'delete') budgetsMap.delete(op.entityId);
+          else budgetsMap.set(op.entityId, { ...payload, userId: opUserId });
+        } else if (op.entityType === 'goal') {
+          if (op.operationType === 'delete') goalsMap.delete(op.entityId);
+          else goalsMap.set(op.entityId, { ...payload, userId: opUserId });
+        } else if (op.entityType === 'investment') {
+          if (op.operationType === 'delete') investmentsMap.delete(op.entityId);
+          else investmentsMap.set(op.entityId, { ...payload, userId: opUserId });
+        } else if (op.entityType === 'liability') {
+          if (op.operationType === 'delete') liabilitiesMap.delete(op.entityId);
+          else liabilitiesMap.set(op.entityId, { ...payload, userId: opUserId });
+        } else if (op.entityType === 'peer_debt') {
+          if (op.operationType === 'delete') peerDebtsMap.delete(op.entityId);
+          else peerDebtsMap.set(op.entityId, { ...payload, userId: opUserId });
+        } else if (op.entityType === 'reimbursement_claim') {
+          if (op.operationType === 'delete') reimbursementsMap.delete(op.entityId);
+          else reimbursementsMap.set(op.entityId, { ...payload, userId: opUserId });
+        } else if (op.entityType === 'subscription') {
+          if (op.operationType === 'delete') subscriptionsMap.delete(op.entityId);
+          else subscriptionsMap.set(op.entityId, { ...payload, userId: opUserId });
+        }
+      }
     }
 
     return c.json({ syncedIds, rejected });
@@ -1133,6 +1202,816 @@ export function createApp() {
     const summary = calculateNetWorth([], investments, liabilities);
 
     return c.json({ summary }, 200);
+  });
+
+  // ==========================================
+  // Phase 7 & 8: Peer Debts, Reimbursements, Subscriptions, Export/Import, Intelligence
+  // ==========================================
+
+  // ------------------------------------------
+  // Peer Debts (Lending & Borrowing)
+  // ------------------------------------------
+
+  // GET /debts: returns user's peer debts and summary (calculatePeerDebtSummary)
+  app.get('/debts', (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const userDebts = Array.from(peerDebtsMap.values()).filter(
+      (debt) => debt.userId === user.id
+    );
+
+    const summary = calculatePeerDebtSummary(userDebts);
+
+    return c.json({ debts: userDebts, summary }, 200);
+  });
+
+  // POST /debts: creates peer debt, pushes sync op, returns { debt } (201)
+  app.post('/debts', async (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const body = await c.req.json();
+    const now = new Date().toISOString();
+    const input = {
+      id: body.id || randomUUID(),
+      personName: body.personName,
+      type: body.type,
+      originalAmountMinor: body.originalAmountMinor,
+      remainingAmountMinor:
+        body.remainingAmountMinor !== undefined
+          ? body.remainingAmountMinor
+          : body.originalAmountMinor,
+      currency: body.currency || 'INR',
+      date: body.date || now,
+      dueDate: body.dueDate ?? null,
+      notes: body.notes ?? null,
+      status: body.status || 'active',
+      createdAt: body.createdAt || now,
+      updatedAt: body.updatedAt || now,
+    };
+
+    const parsed = PeerDebtSchema.safeParse(input);
+    if (!parsed.success) {
+      return c.json({ error: 'Validation failed', details: parsed.error.issues }, 400);
+    }
+
+    const debt: PeerDebt & { userId: string } = {
+      ...parsed.data,
+      userId: user.id,
+    };
+
+    peerDebtsMap.set(debt.id, debt);
+
+    const syncOp = {
+      id: randomUUID(),
+      entityType: 'peer_debt',
+      entityId: debt.id,
+      operationType: 'create',
+      payload: debt as unknown as Record<string, unknown>,
+      timestamp: debt.createdAt,
+      deviceId: 'server',
+      status: 'synced',
+    };
+    syncedOpsMap.set(syncOp.id, syncOp);
+
+    return c.json({ debt }, 201);
+  });
+
+  // PUT /debts/:id: updates peer debt owned by user (404/403 guards), returns { debt } (200)
+  app.put('/debts/:id', async (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const id = c.req.param('id');
+    const existing = peerDebtsMap.get(id);
+    if (!existing) {
+      return c.json({ error: 'Debt not found' }, 404);
+    }
+    if (existing.userId !== user.id) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    const body = await c.req.json();
+    const now = new Date().toISOString();
+    const input = {
+      id,
+      personName: body.personName ?? existing.personName,
+      type: body.type ?? existing.type,
+      originalAmountMinor: body.originalAmountMinor ?? existing.originalAmountMinor,
+      remainingAmountMinor:
+        body.remainingAmountMinor !== undefined
+          ? body.remainingAmountMinor
+          : existing.remainingAmountMinor,
+      currency: body.currency ?? existing.currency,
+      date: body.date ?? existing.date,
+      dueDate: body.dueDate !== undefined ? body.dueDate : existing.dueDate,
+      notes: body.notes !== undefined ? body.notes : existing.notes,
+      status: body.status ?? existing.status,
+      createdAt: body.createdAt || existing.createdAt,
+      updatedAt: body.updatedAt || now,
+    };
+
+    const parsed = PeerDebtSchema.safeParse(input);
+    if (!parsed.success) {
+      return c.json({ error: 'Validation failed', details: parsed.error.issues }, 400);
+    }
+
+    const updated: PeerDebt & { userId: string } = {
+      ...parsed.data,
+      userId: user.id,
+    };
+
+    peerDebtsMap.set(id, updated);
+
+    const syncOp = {
+      id: randomUUID(),
+      entityType: 'peer_debt',
+      entityId: id,
+      operationType: 'update',
+      payload: updated as unknown as Record<string, unknown>,
+      timestamp: updated.updatedAt,
+      deviceId: 'server',
+      status: 'synced',
+    };
+    syncedOpsMap.set(syncOp.id, syncOp);
+
+    return c.json({ debt: updated }, 200);
+  });
+
+  // DELETE /debts/:id: deletes peer debt owned by user (200)
+  app.delete('/debts/:id', (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const id = c.req.param('id');
+    const existing = peerDebtsMap.get(id);
+    if (!existing) {
+      return c.json({ error: 'Debt not found' }, 404);
+    }
+    if (existing.userId !== user.id) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    peerDebtsMap.delete(id);
+
+    const now = new Date().toISOString();
+    const syncOp = {
+      id: randomUUID(),
+      entityType: 'peer_debt',
+      entityId: id,
+      operationType: 'delete',
+      payload: { id },
+      timestamp: now,
+      deviceId: 'server',
+      status: 'synced',
+    };
+    syncedOpsMap.set(syncOp.id, syncOp);
+
+    return c.json({ success: true }, 200);
+  });
+
+  // POST /debts/:id/repay: records repayment, updates remainingAmountMinor, sets status='settled' if 0, returns { debt, repayment } (200)
+  app.post('/debts/:id/repay', async (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const id = c.req.param('id');
+    const existing = peerDebtsMap.get(id);
+    if (!existing) {
+      return c.json({ error: 'Debt not found' }, 404);
+    }
+    if (existing.userId !== user.id) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    const body = await c.req.json();
+    const amountMinor = body?.amountMinor;
+    if (typeof amountMinor !== 'number' || isNaN(amountMinor) || amountMinor <= 0) {
+      return c.json({ error: 'Invalid repayment amount' }, 400);
+    }
+
+    const paymentMinor = Math.round(amountMinor);
+    const newRemaining = Math.max(0, existing.remainingAmountMinor - paymentMinor);
+    const isSettled = newRemaining === 0;
+    const now = new Date().toISOString();
+
+    const updatedDebt: PeerDebt & { userId: string } = {
+      ...existing,
+      remainingAmountMinor: newRemaining,
+      status: isSettled ? 'settled' : existing.status,
+      updatedAt: now,
+    };
+
+    peerDebtsMap.set(id, updatedDebt);
+
+    const repayment: PeerDebtRepayment = {
+      id: body.id || randomUUID(),
+      debtId: id,
+      amountMinor: paymentMinor,
+      date: body.date || now,
+      notes: body.notes ?? null,
+      createdAt: now,
+    };
+
+    const repayments = peerRepaymentsMap.get(id) || [];
+    repayments.push(repayment);
+    peerRepaymentsMap.set(id, repayments);
+
+    const syncDebtOp = {
+      id: randomUUID(),
+      entityType: 'peer_debt',
+      entityId: id,
+      operationType: 'update',
+      payload: updatedDebt as unknown as Record<string, unknown>,
+      timestamp: now,
+      deviceId: 'server',
+      status: 'synced',
+    };
+    syncedOpsMap.set(syncDebtOp.id, syncDebtOp);
+
+    const syncRepayOp = {
+      id: randomUUID(),
+      entityType: 'peer_debt_repayment',
+      entityId: repayment.id,
+      operationType: 'create',
+      payload: repayment as unknown as Record<string, unknown>,
+      timestamp: now,
+      deviceId: 'server',
+      status: 'synced',
+    };
+    syncedOpsMap.set(syncRepayOp.id, syncRepayOp);
+
+    return c.json({ debt: updatedDebt, repayment }, 200);
+  });
+
+  // ------------------------------------------
+  // Reimbursements
+  // ------------------------------------------
+
+  // GET /reimbursements: returns user's claims and summary (calculateReimbursementSummary)
+  app.get('/reimbursements', (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const userClaims = Array.from(reimbursementsMap.values()).filter(
+      (claim) => claim.userId === user.id
+    );
+    const summary = calculateReimbursementSummary(userClaims);
+
+    return c.json({ claims: userClaims, summary }, 200);
+  });
+
+  // POST /reimbursements: creates claim, returns { claim } (201)
+  app.post('/reimbursements', async (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const body = await c.req.json();
+    const now = new Date().toISOString();
+    const input = {
+      id: body.id || randomUUID(),
+      title: body.title,
+      category: body.category || 'work',
+      amountMinor: body.amountMinor,
+      currency: body.currency || 'INR',
+      transactionId: body.transactionId ?? null,
+      status: body.status || 'pending',
+      submittedDate: body.submittedDate || now,
+      settledDate: body.settledDate ?? null,
+      notes: body.notes ?? null,
+      receiptUri: body.receiptUri ?? null,
+      createdAt: body.createdAt || now,
+      updatedAt: body.updatedAt || now,
+    };
+
+    const parsed = ReimbursementClaimSchema.safeParse(input);
+    if (!parsed.success) {
+      return c.json({ error: 'Validation failed', details: parsed.error.issues }, 400);
+    }
+
+    const claim: ReimbursementClaim & { userId: string } = {
+      ...parsed.data,
+      userId: user.id,
+    };
+
+    reimbursementsMap.set(claim.id, claim);
+
+    const syncOp = {
+      id: randomUUID(),
+      entityType: 'reimbursement_claim',
+      entityId: claim.id,
+      operationType: 'create',
+      payload: claim as unknown as Record<string, unknown>,
+      timestamp: claim.createdAt,
+      deviceId: 'server',
+      status: 'synced',
+    };
+    syncedOpsMap.set(syncOp.id, syncOp);
+
+    return c.json({ claim }, 201);
+  });
+
+  // PUT /reimbursements/:id: updates claim (status, amount, etc.), returns { claim } (200)
+  app.put('/reimbursements/:id', async (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const id = c.req.param('id');
+    const existing = reimbursementsMap.get(id);
+    if (!existing) {
+      return c.json({ error: 'Claim not found' }, 404);
+    }
+    if (existing.userId !== user.id) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    const body = await c.req.json();
+    const now = new Date().toISOString();
+    const input = {
+      id,
+      title: body.title ?? existing.title,
+      category: body.category ?? existing.category,
+      amountMinor: body.amountMinor ?? existing.amountMinor,
+      currency: body.currency ?? existing.currency,
+      transactionId:
+        body.transactionId !== undefined ? body.transactionId : existing.transactionId,
+      status: body.status ?? existing.status,
+      submittedDate: body.submittedDate ?? existing.submittedDate,
+      settledDate: body.settledDate !== undefined ? body.settledDate : existing.settledDate,
+      notes: body.notes !== undefined ? body.notes : existing.notes,
+      receiptUri: body.receiptUri !== undefined ? body.receiptUri : existing.receiptUri,
+      createdAt: body.createdAt || existing.createdAt,
+      updatedAt: body.updatedAt || now,
+    };
+
+    const parsed = ReimbursementClaimSchema.safeParse(input);
+    if (!parsed.success) {
+      return c.json({ error: 'Validation failed', details: parsed.error.issues }, 400);
+    }
+
+    const updated: ReimbursementClaim & { userId: string } = {
+      ...parsed.data,
+      userId: user.id,
+    };
+
+    reimbursementsMap.set(id, updated);
+
+    const syncOp = {
+      id: randomUUID(),
+      entityType: 'reimbursement_claim',
+      entityId: id,
+      operationType: 'update',
+      payload: updated as unknown as Record<string, unknown>,
+      timestamp: updated.updatedAt,
+      deviceId: 'server',
+      status: 'synced',
+    };
+    syncedOpsMap.set(syncOp.id, syncOp);
+
+    return c.json({ claim: updated }, 200);
+  });
+
+  // DELETE /reimbursements/:id: deletes claim (200)
+  app.delete('/reimbursements/:id', (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const id = c.req.param('id');
+    const existing = reimbursementsMap.get(id);
+    if (!existing) {
+      return c.json({ error: 'Claim not found' }, 404);
+    }
+    if (existing.userId !== user.id) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    reimbursementsMap.delete(id);
+
+    const now = new Date().toISOString();
+    const syncOp = {
+      id: randomUUID(),
+      entityType: 'reimbursement_claim',
+      entityId: id,
+      operationType: 'delete',
+      payload: { id },
+      timestamp: now,
+      deviceId: 'server',
+      status: 'synced',
+    };
+    syncedOpsMap.set(syncOp.id, syncOp);
+
+    return c.json({ success: true }, 200);
+  });
+
+  // ------------------------------------------
+  // Subscriptions
+  // ------------------------------------------
+
+  // GET /subscriptions: returns user's subscriptions and burn rate (calculateSubscriptionBurnRate)
+  app.get('/subscriptions', (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const userSubs = Array.from(subscriptionsMap.values()).filter(
+      (sub) => sub.userId === user.id
+    );
+    const burnRate = calculateSubscriptionBurnRate(userSubs);
+
+    return c.json({ subscriptions: userSubs, burnRate }, 200);
+  });
+
+  // POST /subscriptions: creates subscription, returns { subscription } (201)
+  app.post('/subscriptions', async (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const body = await c.req.json();
+    const now = new Date().toISOString();
+    const input = {
+      id: body.id || randomUUID(),
+      name: body.name,
+      category: body.category || 'Subscriptions',
+      amountMinor: body.amountMinor,
+      cadence: body.cadence || 'monthly',
+      nextBillingDate: body.nextBillingDate || now,
+      isAutoDetected: body.isAutoDetected ?? false,
+      status: body.status || 'active',
+      createdAt: body.createdAt || now,
+      updatedAt: body.updatedAt || now,
+    };
+
+    const parsed = SubscriptionItemSchema.safeParse(input);
+    if (!parsed.success) {
+      return c.json({ error: 'Validation failed', details: parsed.error.issues }, 400);
+    }
+
+    const subscription: SubscriptionItem & { userId: string } = {
+      ...parsed.data,
+      userId: user.id,
+    };
+
+    subscriptionsMap.set(subscription.id, subscription);
+
+    const syncOp = {
+      id: randomUUID(),
+      entityType: 'subscription',
+      entityId: subscription.id,
+      operationType: 'create',
+      payload: subscription as unknown as Record<string, unknown>,
+      timestamp: subscription.createdAt,
+      deviceId: 'server',
+      status: 'synced',
+    };
+    syncedOpsMap.set(syncOp.id, syncOp);
+
+    return c.json({ subscription }, 201);
+  });
+
+  // PUT /subscriptions/:id: updates subscription, returns { subscription } (200)
+  app.put('/subscriptions/:id', async (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const id = c.req.param('id');
+    const existing = subscriptionsMap.get(id);
+    if (!existing) {
+      return c.json({ error: 'Subscription not found' }, 404);
+    }
+    if (existing.userId !== user.id) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    const body = await c.req.json();
+    const now = new Date().toISOString();
+    const input = {
+      id,
+      name: body.name ?? existing.name,
+      category: body.category ?? existing.category,
+      amountMinor: body.amountMinor ?? existing.amountMinor,
+      cadence: body.cadence ?? existing.cadence,
+      nextBillingDate: body.nextBillingDate ?? existing.nextBillingDate,
+      isAutoDetected:
+        body.isAutoDetected !== undefined ? body.isAutoDetected : existing.isAutoDetected,
+      status: body.status ?? existing.status,
+      createdAt: body.createdAt || existing.createdAt,
+      updatedAt: body.updatedAt || now,
+    };
+
+    const parsed = SubscriptionItemSchema.safeParse(input);
+    if (!parsed.success) {
+      return c.json({ error: 'Validation failed', details: parsed.error.issues }, 400);
+    }
+
+    const updated: SubscriptionItem & { userId: string } = {
+      ...parsed.data,
+      userId: user.id,
+    };
+
+    subscriptionsMap.set(id, updated);
+
+    const syncOp = {
+      id: randomUUID(),
+      entityType: 'subscription',
+      entityId: id,
+      operationType: 'update',
+      payload: updated as unknown as Record<string, unknown>,
+      timestamp: updated.updatedAt,
+      deviceId: 'server',
+      status: 'synced',
+    };
+    syncedOpsMap.set(syncOp.id, syncOp);
+
+    return c.json({ subscription: updated }, 200);
+  });
+
+  // DELETE /subscriptions/:id: deletes subscription (200)
+  app.delete('/subscriptions/:id', (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const id = c.req.param('id');
+    const existing = subscriptionsMap.get(id);
+    if (!existing) {
+      return c.json({ error: 'Subscription not found' }, 404);
+    }
+    if (existing.userId !== user.id) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    subscriptionsMap.delete(id);
+
+    const now = new Date().toISOString();
+    const syncOp = {
+      id: randomUUID(),
+      entityType: 'subscription',
+      entityId: id,
+      operationType: 'delete',
+      payload: { id },
+      timestamp: now,
+      deviceId: 'server',
+      status: 'synced',
+    };
+    syncedOpsMap.set(syncOp.id, syncOp);
+
+    return c.json({ success: true }, 200);
+  });
+
+  // ------------------------------------------
+  // Full Data Export & Import
+  // ------------------------------------------
+
+  // GET /export: returns full ledger JSON export (LedgerExportData)
+  app.get('/export', (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const accounts = Array.from(accountsMap.values())
+      .filter((a) => a.userId === user.id)
+      .map(({ userId, ...rest }) => rest);
+    const categories = Array.from(categoriesMap.values())
+      .filter((cat) => cat.userId === user.id)
+      .map(({ userId, ...rest }) => rest);
+    const transactions = Array.from(transactionsMap.values())
+      .filter((tx) => tx.userId === user.id)
+      .map(({ userId, ...rest }) => rest);
+    const budgets = Array.from(budgetsMap.values())
+      .filter((b) => b.userId === user.id)
+      .map(({ userId, ...rest }) => rest);
+    const goals = Array.from(goalsMap.values())
+      .filter((g) => g.userId === user.id)
+      .map(({ userId, ...rest }) => rest);
+    const investments = Array.from(investmentsMap.values())
+      .filter((i) => i.userId === user.id)
+      .map(({ userId, ...rest }) => rest);
+    const liabilities = Array.from(liabilitiesMap.values())
+      .filter((l) => l.userId === user.id)
+      .map(({ userId, ...rest }) => rest);
+    const peerDebts = Array.from(peerDebtsMap.values())
+      .filter((d) => d.userId === user.id)
+      .map(({ userId, ...rest }) => rest);
+
+    const debtIds = new Set(peerDebts.map((d) => d.id));
+    const peerRepayments: PeerDebtRepayment[] = [];
+    for (const [debtId, reps] of peerRepaymentsMap.entries()) {
+      if (debtIds.has(debtId)) {
+        peerRepayments.push(...reps);
+      }
+    }
+
+    const reimbursements = Array.from(reimbursementsMap.values())
+      .filter((r) => r.userId === user.id)
+      .map(({ userId, ...rest }) => rest);
+    const subscriptions = Array.from(subscriptionsMap.values())
+      .filter((s) => s.userId === user.id)
+      .map(({ userId, ...rest }) => rest);
+
+    const exportData: LedgerExportData = {
+      version: '1.0',
+      exportedAt: new Date().toISOString(),
+      accounts,
+      categories,
+      transactions,
+      budgets,
+      goals,
+      investments,
+      liabilities,
+      peerDebts,
+      peerRepayments,
+      reimbursements,
+      subscriptions,
+    };
+
+    return c.json(exportData, 200);
+  });
+
+  // POST /import: validates incoming LedgerExportData, merges/reconciles deterministically into user's ledger, returns { success: true, count: number }
+  app.post('/import', async (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const body = await c.req.json();
+    const parsed = LedgerExportDataSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: 'Validation failed', details: parsed.error.issues }, 400);
+    }
+
+    const data = parsed.data;
+    let count = 0;
+
+    for (const acc of data.accounts) {
+      accountsMap.set(acc.id, { ...acc, userId: user.id });
+      count++;
+    }
+    for (const cat of data.categories) {
+      categoriesMap.set(cat.id, { ...cat, userId: user.id });
+      count++;
+    }
+    for (const tx of data.transactions) {
+      transactionsMap.set(tx.id, { ...tx, userId: user.id });
+      count++;
+    }
+    for (const b of data.budgets) {
+      budgetsMap.set(b.id, { ...b, userId: user.id });
+      count++;
+    }
+    for (const g of data.goals) {
+      goalsMap.set(g.id, { ...g, userId: user.id });
+      count++;
+    }
+    for (const inv of data.investments) {
+      investmentsMap.set(inv.id, { ...inv, userId: user.id });
+      count++;
+    }
+    for (const liab of data.liabilities) {
+      liabilitiesMap.set(liab.id, { ...liab, userId: user.id });
+      count++;
+    }
+    for (const debt of data.peerDebts ?? []) {
+      peerDebtsMap.set(debt.id, { ...debt, userId: user.id });
+      count++;
+    }
+    for (const rep of data.peerRepayments ?? []) {
+      const reps = peerRepaymentsMap.get(rep.debtId) || [];
+      const existingIdx = reps.findIndex((r) => r.id === rep.id);
+      if (existingIdx >= 0) {
+        reps[existingIdx] = rep;
+      } else {
+        reps.push(rep);
+      }
+      peerRepaymentsMap.set(rep.debtId, reps);
+      count++;
+    }
+    for (const claim of data.reimbursements ?? []) {
+      reimbursementsMap.set(claim.id, { ...claim, userId: user.id });
+      count++;
+    }
+    for (const sub of data.subscriptions ?? []) {
+      subscriptionsMap.set(sub.id, { ...sub, userId: user.id });
+      count++;
+    }
+
+    return c.json({ success: true, count }, 200);
+  });
+
+  // ------------------------------------------
+  // Intelligence & Explanations
+  // ------------------------------------------
+
+  // POST /intelligence/query: accepts { query: string }, runs processFinancialQuery, returns NaturalLanguageQueryResponse
+  app.post('/intelligence/query', async (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const body = await c.req.json();
+    const queryText = body?.query ?? body?.question;
+    if (!queryText || typeof queryText !== 'string' || queryText.trim().length === 0) {
+      return c.json({ error: 'Query is required' }, 400);
+    }
+
+    const accounts = Array.from(accountsMap.values())
+      .filter((a) => a.userId === user.id)
+      .map(({ userId, ...rest }) => rest);
+    const categories = Array.from(categoriesMap.values())
+      .filter((cat) => cat.userId === user.id)
+      .map(({ userId, ...rest }) => rest);
+    const transactions = Array.from(transactionsMap.values())
+      .filter((tx) => tx.userId === user.id)
+      .map(({ userId, ...rest }) => rest);
+    const budgets = Array.from(budgetsMap.values())
+      .filter((b) => b.userId === user.id)
+      .map(({ userId, ...rest }) => rest);
+    const investments = Array.from(investmentsMap.values())
+      .filter((i) => i.userId === user.id)
+      .map(({ userId, ...rest }) => rest);
+    const liabilities = Array.from(liabilitiesMap.values())
+      .filter((l) => l.userId === user.id)
+      .map(({ userId, ...rest }) => rest);
+    const peerDebts = Array.from(peerDebtsMap.values())
+      .filter((d) => d.userId === user.id)
+      .map(({ userId, ...rest }) => rest);
+    const reimbursements = Array.from(reimbursementsMap.values())
+      .filter((r) => r.userId === user.id)
+      .map(({ userId, ...rest }) => rest);
+    const subscriptions = Array.from(subscriptionsMap.values())
+      .filter((s) => s.userId === user.id)
+      .map(({ userId, ...rest }) => rest);
+
+    const response = processFinancialQuery({
+      query: queryText,
+      accounts,
+      transactions,
+      categories,
+      budgets,
+      investments,
+      liabilities,
+      peerDebts,
+      reimbursements,
+      subscriptions,
+    });
+
+    return c.json({ ...response, response }, 200);
+  });
+
+  // GET /intelligence/forecast: runs forecastCashFlow, returns { forecast: CashFlowForecastPoint[] }
+  app.get('/intelligence/forecast', (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const accounts = Array.from(accountsMap.values()).filter((a) => a.userId === user.id);
+    const transactions = Array.from(transactionsMap.values()).filter(
+      (tx) => tx.userId === user.id
+    );
+    const subscriptions = Array.from(subscriptionsMap.values()).filter(
+      (s) => s.userId === user.id
+    );
+    const liabilities = Array.from(liabilitiesMap.values()).filter(
+      (l) => l.userId === user.id
+    );
+
+    let currentBalanceMinor = 0;
+    for (const acc of accounts) {
+      if (acc.type === 'bank' || acc.type === 'cash' || acc.type === 'wallet') {
+        currentBalanceMinor += acc.initialBalanceMinor;
+      }
+    }
+    for (const tx of transactions) {
+      if (tx.type === 'income') currentBalanceMinor += tx.amountMinor;
+      else if (tx.type === 'expense') currentBalanceMinor -= tx.amountMinor;
+    }
+
+    const forecast = forecastCashFlow({
+      currentBalanceMinor,
+      subscriptions,
+      liabilities,
+      transactions,
+    });
+
+    return c.json({ forecast }, 200);
+  });
+
+  // GET /intelligence/anomalies: runs detectAnomalies, returns { anomalies: FinancialAnomaly[] }
+  app.get('/intelligence/anomalies', (c) => {
+    const user = getAuthUser(c);
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const transactions = Array.from(transactionsMap.values()).filter(
+      (tx) => tx.userId === user.id
+    );
+    const subscriptions = Array.from(subscriptionsMap.values()).filter(
+      (s) => s.userId === user.id
+    );
+    const liabilities = Array.from(liabilitiesMap.values()).filter(
+      (l) => l.userId === user.id
+    );
+
+    const anomalies = detectAnomalies({
+      transactions,
+      subscriptions,
+      liabilities,
+    });
+
+    return c.json({ anomalies }, 200);
   });
 
   return app;

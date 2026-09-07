@@ -31,7 +31,15 @@ const MONTH_NAMES = [
 
 export const ReportsScreen: React.FC = () => {
   const { colors, tokens } = useAppTheme();
-  const { transactions, categories, fixedVsVariable, spendingTrends } = useLedger();
+  const {
+    transactions,
+    categories,
+    fixedVsVariable,
+    spendingTrends,
+    personalSpendingBreakdown,
+    reimbursementSummary,
+    subscriptionBurnRate,
+  } = useLedger();
 
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
@@ -445,6 +453,109 @@ export const ReportsScreen: React.FC = () => {
               <Text color={colors.textMuted} fontSize={11} lineHeight={16}>
                 Fixed includes recurring bills & utilities, Variable includes day-to-day spending.
               </Text>
+            </Card>
+          </VStack>
+        )}
+
+        {/* Personal vs Reimbursable Spending Breakdown Card */}
+        {personalSpendingBreakdown && (
+          <VStack space="sm">
+            <Text color={colors.textPrimary} fontSize={12} fontWeight="bold" letterSpacing={0.8}>
+              PERSONAL VS REIMBURSABLE SPENDING
+            </Text>
+
+            <Card
+              backgroundColor={colors.surface}
+              borderColor={colors.border}
+              borderWidth={1}
+              borderRadius={tokens.radius.md}
+              p={tokens.spacing.md}
+            >
+              <HStack justifyContent="space-between" alignItems="center" mb={10}>
+                <VStack>
+                  <Text color={colors.textSecondary} fontSize={11} fontWeight="bold" letterSpacing={0.5}>
+                    GROSS SPENDING
+                  </Text>
+                  <Text color={colors.textPrimary} fontSize={16} fontWeight="bold" mt={2}>
+                    {formatMoney(personalSpendingBreakdown.grossExpenseMinor, 'INR')}
+                  </Text>
+                </VStack>
+
+                <VStack alignItems="center">
+                  <Text color={colors.textSecondary} fontSize={11} fontWeight="bold" letterSpacing={0.5}>
+                    REIMBURSABLE
+                  </Text>
+                  <Text color={colors.warning} fontSize={16} fontWeight="bold" mt={2}>
+                    -{formatMoney(personalSpendingBreakdown.reimbursableExpenseMinor, 'INR')}
+                  </Text>
+                </VStack>
+
+                <VStack alignItems="flex-end">
+                  <Text color={colors.textSecondary} fontSize={11} fontWeight="bold" letterSpacing={0.5}>
+                    NET PERSONAL
+                  </Text>
+                  <Text color={colors.accentPrimary} fontSize={16} fontWeight="bold" mt={2}>
+                    {formatMoney(personalSpendingBreakdown.netPersonalExpenseMinor, 'INR')}
+                  </Text>
+                </VStack>
+              </HStack>
+
+              {reimbursementSummary && (
+                <HStack
+                  justifyContent="space-between"
+                  alignItems="center"
+                  pt={8}
+                  borderTopWidth={1}
+                  borderTopColor={colors.border}
+                >
+                  <Text color={colors.textSecondary} fontSize={11} fontWeight="500">
+                    Pending Claims: {formatMoney(reimbursementSummary.pendingMinor, 'INR')}
+                  </Text>
+                  <Text color={colors.success} fontSize={11} fontWeight="600">
+                    Reimbursed: {formatMoney(reimbursementSummary.reimbursedMinor, 'INR')}
+                  </Text>
+                </HStack>
+              )}
+            </Card>
+          </VStack>
+        )}
+
+        {/* Subscriptions & Recurring Burn Rate Card */}
+        {subscriptionBurnRate && subscriptionBurnRate.activeCount > 0 && (
+          <VStack space="sm">
+            <Text color={colors.textPrimary} fontSize={12} fontWeight="bold" letterSpacing={0.8}>
+              RECURRING & SUBSCRIPTIONS BURN RATE
+            </Text>
+
+            <Card
+              backgroundColor={colors.surface}
+              borderColor={colors.border}
+              borderWidth={1}
+              borderRadius={tokens.radius.md}
+              p={tokens.spacing.md}
+            >
+              <HStack justifyContent="space-between" alignItems="center">
+                <VStack>
+                  <Text color={colors.textSecondary} fontSize={11} fontWeight="bold" letterSpacing={0.5}>
+                    MONTHLY BURN RATE
+                  </Text>
+                  <Text color={colors.danger} fontSize={18} fontWeight="bold" mt={4}>
+                    {formatMoney(subscriptionBurnRate.monthlyBurnRateMinor, 'INR')} / mo
+                  </Text>
+                  <Text color={colors.textMuted} fontSize={11} mt={2}>
+                    Across {subscriptionBurnRate.activeCount} active subscription{subscriptionBurnRate.activeCount === 1 ? '' : 's'}
+                  </Text>
+                </VStack>
+
+                <VStack alignItems="flex-end">
+                  <Text color={colors.textSecondary} fontSize={11} fontWeight="bold" letterSpacing={0.5}>
+                    ANNUALIZED COST
+                  </Text>
+                  <Text color={colors.textPrimary} fontSize={16} fontWeight="bold" mt={4}>
+                    {formatMoney(subscriptionBurnRate.yearlyBurnRateMinor, 'INR')} / yr
+                  </Text>
+                </VStack>
+              </HStack>
             </Card>
           </VStack>
         )}

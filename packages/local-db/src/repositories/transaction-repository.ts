@@ -17,6 +17,9 @@ interface TxRow {
   to_account_id: string | null;
   is_recurring: number;
   recurring_frequency: string | null;
+  is_reimbursable?: number | null;
+  reimbursement_status?: string | null;
+  receipt_attachment_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -36,6 +39,9 @@ function mapRow(row: TxRow): Transaction {
     toAccountId: row.to_account_id,
     isRecurring: Boolean(row.is_recurring),
     recurringFrequency: row.recurring_frequency as Transaction['recurringFrequency'],
+    isReimbursable: Boolean(row.is_reimbursable),
+    reimbursementStatus: (row.reimbursement_status as Transaction['reimbursementStatus']) ?? null,
+    receiptAttachmentId: row.receipt_attachment_id ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -49,8 +55,9 @@ export class SqliteTransactionRepository implements TransactionRepository {
       `INSERT INTO transactions (
         id, account_id, type, amount_minor, currency, date, category_id,
         subcategory, merchant, notes, to_account_id, is_recurring,
-        recurring_frequency, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        recurring_frequency, is_reimbursable, reimbursement_status,
+        receipt_attachment_id, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         tx.id,
         tx.accountId,
@@ -65,6 +72,9 @@ export class SqliteTransactionRepository implements TransactionRepository {
         tx.toAccountId ?? null,
         tx.isRecurring ? 1 : 0,
         tx.recurringFrequency ?? null,
+        tx.isReimbursable ? 1 : 0,
+        tx.reimbursementStatus ?? null,
+        tx.receiptAttachmentId ?? null,
         tx.createdAt,
         tx.updatedAt,
       ]
@@ -149,7 +159,9 @@ export class SqliteTransactionRepository implements TransactionRepository {
       `UPDATE transactions SET
         account_id = ?, type = ?, amount_minor = ?, currency = ?, date = ?,
         category_id = ?, subcategory = ?, merchant = ?, notes = ?,
-        to_account_id = ?, is_recurring = ?, recurring_frequency = ?, updated_at = ?
+        to_account_id = ?, is_recurring = ?, recurring_frequency = ?,
+        is_reimbursable = ?, reimbursement_status = ?, receipt_attachment_id = ?,
+        updated_at = ?
        WHERE id = ?`,
       [
         tx.accountId,
@@ -164,6 +176,9 @@ export class SqliteTransactionRepository implements TransactionRepository {
         tx.toAccountId ?? null,
         tx.isRecurring ? 1 : 0,
         tx.recurringFrequency ?? null,
+        tx.isReimbursable ? 1 : 0,
+        tx.reimbursementStatus ?? null,
+        tx.receiptAttachmentId ?? null,
         tx.updatedAt,
         tx.id,
       ]

@@ -11,6 +11,10 @@ import {
   SqliteGroupRepository,
   SqliteSyncStateRepository,
   SqliteOutboxRepository,
+  SqlitePeerDebtRepository,
+  SqliteReimbursementRepository,
+  SqliteSubscriptionRepository,
+  SqliteReceiptRepository,
 } from '@biyong/local-db';
 import {
   AccountUseCases,
@@ -21,6 +25,11 @@ import {
   AnalyticsUseCases,
   GroupUseCases,
   WealthUseCases,
+  LendingUseCases,
+  ReimbursementUseCases,
+  SubscriptionUseCases,
+  ExportImportUseCases,
+  IntelligenceUseCases,
 } from '@biyong/application';
 import type { Account } from '@biyong/schemas';
 
@@ -60,6 +69,10 @@ export interface LedgerDatabaseServices {
   groupRepo: SqliteGroupRepository;
   syncStateRepo: SqliteSyncStateRepository;
   outboxRepo: SqliteOutboxRepository;
+  peerDebtRepo: SqlitePeerDebtRepository;
+  reimbursementRepo: SqliteReimbursementRepository;
+  subscriptionRepo: SqliteSubscriptionRepository;
+  receiptRepo: SqliteReceiptRepository;
   accountUseCases: AccountUseCases;
   txUseCases: TransactionUseCases;
   categoryUseCases: CategoryUseCases;
@@ -68,6 +81,11 @@ export interface LedgerDatabaseServices {
   analyticsUseCases: AnalyticsUseCases;
   groupUseCases: GroupUseCases;
   wealthUseCases: WealthUseCases;
+  lendingUseCases: LendingUseCases;
+  reimbursementUseCases: ReimbursementUseCases;
+  subscriptionUseCases: SubscriptionUseCases;
+  exportImportUseCases: ExportImportUseCases;
+  intelligenceUseCases: IntelligenceUseCases;
 }
 
 let dbInstance: SQLite.SQLiteDatabase | null = null;
@@ -97,6 +115,10 @@ export async function initDatabase(): Promise<LedgerDatabaseServices> {
   const groupRepo = new SqliteGroupRepository(driver);
   const syncStateRepo = new SqliteSyncStateRepository(driver);
   const outboxRepo = new SqliteOutboxRepository(driver);
+  const peerDebtRepo = new SqlitePeerDebtRepository(driver);
+  const reimbursementRepo = new SqliteReimbursementRepository(driver);
+  const subscriptionRepo = new SqliteSubscriptionRepository(driver);
+  const receiptRepo = new SqliteReceiptRepository(driver);
 
   // Initialize use cases
   const accountUseCases = new AccountUseCases(accountRepo, txRepo);
@@ -107,8 +129,29 @@ export async function initDatabase(): Promise<LedgerDatabaseServices> {
   const analyticsUseCases = new AnalyticsUseCases(txRepo);
   const groupUseCases = new GroupUseCases(groupRepo);
   const wealthUseCases = new WealthUseCases(accountRepo, txRepo, wealthRepo);
-
-  // App starts with no data (clean slate for user)
+  const lendingUseCases = new LendingUseCases(peerDebtRepo);
+  const reimbursementUseCases = new ReimbursementUseCases(reimbursementRepo, txRepo);
+  const subscriptionUseCases = new SubscriptionUseCases(subscriptionRepo, txRepo);
+  const exportImportUseCases = new ExportImportUseCases({
+    accountRepo,
+    txRepo,
+    categoryRepo,
+    budgetRepo,
+    goalRepo,
+    wealthRepo,
+    peerDebtRepo,
+    reimbursementRepo,
+    subscriptionRepo,
+  });
+  const intelligenceUseCases = new IntelligenceUseCases({
+    accountRepo,
+    txRepo,
+    categoryRepo,
+    budgetRepo,
+    wealthRepo,
+    peerDebtRepo,
+    subscriptionRepo,
+  });
 
   cachedServices = {
     driver,
@@ -121,6 +164,10 @@ export async function initDatabase(): Promise<LedgerDatabaseServices> {
     groupRepo,
     syncStateRepo,
     outboxRepo,
+    peerDebtRepo,
+    reimbursementRepo,
+    subscriptionRepo,
+    receiptRepo,
     accountUseCases,
     txUseCases,
     categoryUseCases,
@@ -129,6 +176,11 @@ export async function initDatabase(): Promise<LedgerDatabaseServices> {
     analyticsUseCases,
     groupUseCases,
     wealthUseCases,
+    lendingUseCases,
+    reimbursementUseCases,
+    subscriptionUseCases,
+    exportImportUseCases,
+    intelligenceUseCases,
   };
 
   return cachedServices;

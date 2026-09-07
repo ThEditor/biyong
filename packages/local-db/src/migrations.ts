@@ -34,6 +34,9 @@ CREATE TABLE IF NOT EXISTS transactions (
   to_account_id TEXT,
   is_recurring INTEGER NOT NULL DEFAULT 0,
   recurring_frequency TEXT,
+  is_reimbursable INTEGER DEFAULT 0,
+  reimbursement_status TEXT,
+  receipt_attachment_id TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   FOREIGN KEY (account_id) REFERENCES accounts (id),
@@ -164,6 +167,70 @@ CREATE TABLE IF NOT EXISTS sync_state (
   value TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS peer_debts (
+  id TEXT PRIMARY KEY,
+  person_name TEXT NOT NULL,
+  type TEXT NOT NULL,
+  original_amount_minor INTEGER NOT NULL,
+  remaining_amount_minor INTEGER NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'INR',
+  date TEXT NOT NULL,
+  due_date TEXT,
+  notes TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS peer_debt_repayments (
+  id TEXT PRIMARY KEY,
+  debt_id TEXT NOT NULL,
+  amount_minor INTEGER NOT NULL,
+  date TEXT NOT NULL,
+  notes TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY(debt_id) REFERENCES peer_debts(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS reimbursement_claims (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'work',
+  amount_minor INTEGER NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'INR',
+  transaction_id TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  submitted_date TEXT NOT NULL,
+  settled_date TEXT,
+  notes TEXT,
+  receipt_uri TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL,
+  amount_minor INTEGER NOT NULL,
+  cadence TEXT NOT NULL DEFAULT 'monthly',
+  next_billing_date TEXT NOT NULL,
+  is_auto_detected INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS receipt_attachments (
+  id TEXT PRIMARY KEY,
+  transaction_id TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  file_type TEXT NOT NULL,
+  file_size_bytes INTEGER NOT NULL,
+  storage_uri TEXT NOT NULL,
+  uploaded_at TEXT NOT NULL
+);
 `;
 
 export const BUILTIN_CATEGORIES = [
@@ -185,6 +252,25 @@ export async function runMigrations(driver: SqliteDriver): Promise<void> {
   // Migration: Add created_by_user_id to group_expenses if missing
   try {
     await driver.run('ALTER TABLE group_expenses ADD COLUMN created_by_user_id TEXT');
+  } catch {
+    // Column already exists, ignore
+  }
+
+  // Safe column additions to transactions table
+  try {
+    await driver.run('ALTER TABLE transactions ADD COLUMN is_reimbursable INTEGER DEFAULT 0');
+  } catch {
+    // Column already exists, ignore
+  }
+
+  try {
+    await driver.run('ALTER TABLE transactions ADD COLUMN reimbursement_status TEXT');
+  } catch {
+    // Column already exists, ignore
+  }
+
+  try {
+    await driver.run('ALTER TABLE transactions ADD COLUMN receipt_attachment_id TEXT');
   } catch {
     // Column already exists, ignore
   }
