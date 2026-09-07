@@ -174,6 +174,9 @@ describe('Application: Transactions & Derived Balances', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
@@ -193,6 +196,9 @@ describe('Application: Transactions & Derived Balances', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
@@ -212,6 +218,9 @@ describe('Application: Transactions & Derived Balances', () => {
       toAccountId: 'acc-2',
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
@@ -252,6 +261,9 @@ describe('Application: Transactions & Derived Balances', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -308,6 +320,9 @@ describe('Application: Transactions & Derived Balances', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -348,6 +363,9 @@ describe('Application: Transactions & Derived Balances', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
@@ -366,6 +384,9 @@ describe('Application: Transactions & Derived Balances', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
@@ -417,6 +438,9 @@ describe('Application: Transactions & Derived Balances', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
@@ -436,6 +460,9 @@ describe('Application: Transactions & Derived Balances', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
@@ -487,6 +514,7 @@ describe('Application: Groups & Settlements', () => {
       currency: 'INR',
       date: '2026-09-06',
       createdByMemberId: 'm1',
+      createdByUserId: null,
       payers: [{ memberId: 'm1', amountMinor: 300000 }],
       splitMethod: 'equal',
       allocations: [{ memberId: 'm1' }, { memberId: 'm2' }, { memberId: 'm3' }],
@@ -617,6 +645,9 @@ describe('Application: Account Use Cases', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: '2026-09-02T00:00:00.000Z',
       updatedAt: '2026-09-02T00:00:00.000Z',
     });
@@ -636,6 +667,9 @@ describe('Application: Account Use Cases', () => {
       toAccountId: 'acc-c1',
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: '2026-09-03T00:00:00.000Z',
       updatedAt: '2026-09-03T00:00:00.000Z',
     });
@@ -655,6 +689,9 @@ describe('Application: Account Use Cases', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: '2026-09-04T00:00:00.000Z',
       updatedAt: '2026-09-04T00:00:00.000Z',
     });
@@ -663,19 +700,19 @@ describe('Application: Account Use Cases', () => {
     const all = await accountUseCases.listAccountsWithDerivedBalances(true);
     expect(all).toHaveLength(3);
 
-    const bankResult = all.find((a) => a.id === 'acc-b1');
+    const bankResult = all.find((a) => a.account.id === 'acc-b1');
     // Bank: 5,000 + 2,000 - 1,000 = 6,000 (600000 minor)
     expect(bankResult?.derivedBalanceMinor).toBe(600000);
     expect(bankResult?.account.name).toBe('HDFC Bank');
 
-    const cashResult = all.find((a) => a.id === 'acc-c1');
+    const cashResult = all.find((a) => a.account.id === 'acc-c1');
     // Cash: 1,000 + 1,000 - 400 = 1,600 (160000 minor)
     expect(cashResult?.derivedBalanceMinor).toBe(160000);
 
     // Active accounts only
     const activeOnly = await accountUseCases.listAccountsWithDerivedBalances(false);
     expect(activeOnly).toHaveLength(2);
-    expect(activeOnly.map((a) => a.id)).not.toContain('acc-old');
+    expect(activeOnly.map((a) => a.account.id)).not.toContain('acc-old');
   });
 });
 
@@ -800,6 +837,9 @@ describe('Application: Budget Use Cases', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: '2026-09-05T00:00:00.000Z',
       updatedAt: '2026-09-05T00:00:00.000Z',
     });
@@ -819,6 +859,9 @@ describe('Application: Budget Use Cases', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: '2026-09-10T00:00:00.000Z',
       updatedAt: '2026-09-10T00:00:00.000Z',
     });
@@ -838,6 +881,9 @@ describe('Application: Budget Use Cases', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: '2026-09-12T00:00:00.000Z',
       updatedAt: '2026-09-12T00:00:00.000Z',
     });
@@ -857,6 +903,9 @@ describe('Application: Budget Use Cases', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: '2026-08-25T00:00:00.000Z',
       updatedAt: '2026-08-25T00:00:00.000Z',
     });
@@ -876,6 +925,9 @@ describe('Application: Budget Use Cases', () => {
       toAccountId: 'acc-2',
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: '2026-09-15T00:00:00.000Z',
       updatedAt: '2026-09-15T00:00:00.000Z',
     });
@@ -1058,6 +1110,9 @@ describe('Application: Analytics Use Cases', () => {
       toAccountId: null,
       isRecurring: true,
       recurringFrequency: 'monthly',
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: '2026-09-01T00:00:00.000Z',
       updatedAt: '2026-09-01T00:00:00.000Z',
     });
@@ -1077,6 +1132,9 @@ describe('Application: Analytics Use Cases', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: '2026-09-02T00:00:00.000Z',
       updatedAt: '2026-09-02T00:00:00.000Z',
     });
@@ -1096,6 +1154,9 @@ describe('Application: Analytics Use Cases', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: '2026-09-03T00:00:00.000Z',
       updatedAt: '2026-09-03T00:00:00.000Z',
     });
@@ -1115,6 +1176,9 @@ describe('Application: Analytics Use Cases', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: '2026-09-01T00:00:00.000Z',
       updatedAt: '2026-09-01T00:00:00.000Z',
     });
@@ -1134,6 +1198,9 @@ describe('Application: Analytics Use Cases', () => {
       toAccountId: 'acc-2',
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: '2026-09-04T00:00:00.000Z',
       updatedAt: '2026-09-04T00:00:00.000Z',
     });
@@ -1165,6 +1232,9 @@ describe('Application: Analytics Use Cases', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: '2026-08-01T00:00:00.000Z',
       updatedAt: '2026-08-01T00:00:00.000Z',
     });
@@ -1182,6 +1252,9 @@ describe('Application: Analytics Use Cases', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: '2026-08-10T00:00:00.000Z',
       updatedAt: '2026-08-10T00:00:00.000Z',
     });
@@ -1201,6 +1274,9 @@ describe('Application: Analytics Use Cases', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: '2026-09-01T00:00:00.000Z',
       updatedAt: '2026-09-01T00:00:00.000Z',
     });
@@ -1218,6 +1294,9 @@ describe('Application: Analytics Use Cases', () => {
       toAccountId: null,
       isRecurring: false,
       recurringFrequency: null,
+      isReimbursable: false,
+      reimbursementStatus: null,
+      receiptAttachmentId: null,
       createdAt: '2026-09-10T00:00:00.000Z',
       updatedAt: '2026-09-10T00:00:00.000Z',
     });
@@ -1239,4 +1318,3 @@ describe('Application: Analytics Use Cases', () => {
     expect(trends[1]?.savingsRate).toBe(50); // 3000000 / 6000000 = 50%
   });
 });
-

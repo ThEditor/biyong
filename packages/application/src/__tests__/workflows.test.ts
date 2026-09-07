@@ -162,7 +162,7 @@ describe('Application Layer: LendingUseCases', () => {
 
       const reps = await useCases.getRepayments('debt-1');
       expect(reps.length).toBe(1);
-      expect(reps[0].amountMinor).toBe(40000);
+      expect(reps[0]?.amountMinor).toBe(40000);
     });
   });
 });
@@ -316,8 +316,8 @@ describe('Application Layer: SubscriptionUseCases', () => {
 
     const detected = await useCases.detectSubscriptions();
     expect(detected.length).toBe(1);
-    expect(detected[0].name).toBe('iCloud');
-    expect(detected[0].cadence).toBe('monthly');
+    expect(detected[0]?.name).toBe('iCloud');
+    expect(detected[0]?.cadence).toBe('monthly');
   });
 });
 
