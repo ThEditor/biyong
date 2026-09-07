@@ -13,6 +13,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.biyong.app",
       "adaptiveIcon": {
         "backgroundColor": "#090D16"
       }

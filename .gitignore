@@ -20,9 +20,11 @@ out/
 .expo/
 .expo-shared/
 web-build/
-android/app/build/
-android/.gradle/
-android/build/
+**/android/app/build/
+**/android/.gradle/
+**/android/build/
+**/android/local.properties
+**/android/.cxx/
 ios/Pods/
 ios/build/
 *.mode1v3
