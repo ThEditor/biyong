@@ -308,8 +308,8 @@ describe('Phase 8 Intelligence: Anomaly Detection', () => {
 
     const anomalies = detectAnomalies(txs);
     expect(anomalies.length).toBe(1);
-    expect(anomalies[0].type).toBe('duplicate_charge');
-    expect(anomalies[0].severity).toBe('warning');
+    expect(anomalies[0]!.type).toBe('duplicate_charge');
+    expect(anomalies[0]!.severity).toBe('warning');
   });
 
   it('detects spending spikes exceeding 2.5x category average', () => {
@@ -379,8 +379,8 @@ describe('Phase 8 Intelligence: Anomaly Detection', () => {
     const anomalies = detectAnomalies(txs);
     const spikes = anomalies.filter((a) => a.type === 'spending_spike');
     expect(spikes.length).toBe(1);
-    expect(spikes[0].transactionId).toBe('tx-3');
-    expect(spikes[0].severity).toBe('alert');
+    expect(spikes[0]!.transactionId).toBe('tx-3');
+    expect(spikes[0]!.severity).toBe('alert');
   });
 });
 
