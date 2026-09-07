@@ -42,7 +42,11 @@ import {
   validatePayers,
   calculateSplit,
   buildDependencyGraph,
+  calculateNetBalances,
+  simplifyDebts,
   explainMemberSettlement,
+  type DependencyGraphNode,
+  type DependencyGraphEdge,
   calculateNetWorth,
   calculatePeerDebtSummary,
   calculateReimbursementSummary,
@@ -796,6 +800,27 @@ export function createApp() {
 
     const expenses = groupExpensesMap.get(groupId) || [];
     const settlements = settlementsMap.get(groupId) || [];
+
+    // ?simplify=true collapses the graph to net member-to-member transfers
+    // using greedy min-cash-flow on net balances (fewest payments path).
+    const simplify = c.req.query('simplify') === 'true';
+    if (simplify) {
+      const memberIds = members.map((m) => m.id);
+      const balances = calculateNetBalances(memberIds, expenses, settlements);
+      const transfers = simplifyDebts(balances);
+      const nodes: DependencyGraphNode[] = [];
+      for (const m of members) {
+        nodes.push({ id: `member-${m.id}`, label: m.name, type: 'member', data: { memberId: m.id } });
+      }
+      const edges: DependencyGraphEdge[] = transfers.map((t, i) => ({
+        id: `net-${i}-${t.fromMemberId}-${t.toMemberId}`,
+        source: `member-${t.fromMemberId}`,
+        target: `member-${t.toMemberId}`,
+        label: 'Net owed',
+        amountMinor: t.amountMinor,
+      }));
+      return c.json({ graph: { nodes, edges }, simplified: true }, 200);
+    }
 
     const graph = buildDependencyGraph(memberNames, expenses, settlements);
 
