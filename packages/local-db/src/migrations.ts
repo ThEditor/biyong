@@ -285,4 +285,27 @@ export async function runMigrations(driver: SqliteDriver): Promise<void> {
       );
     }
   }
+
+  // Migration: SMS import tracking table (idempotent re-imports, review queue)
+  await driver.exec(`CREATE TABLE IF NOT EXISTS imported_sms (
+  id TEXT PRIMARY KEY,
+  sms_hash TEXT NOT NULL UNIQUE,
+  sender TEXT,
+  account_id TEXT,
+  kind TEXT NOT NULL,
+  amount_minor INTEGER NOT NULL DEFAULT 0,
+  account_tail TEXT,
+  merchant TEXT,
+  upi_ref TEXT,
+  date TEXT,
+  confidence REAL NOT NULL DEFAULT 0,
+  raw_text TEXT NOT NULL,
+  imported_transaction_id TEXT,
+  reviewed INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_imported_sms_hash ON imported_sms(sms_hash);
+CREATE INDEX IF NOT EXISTS idx_imported_sms_account ON imported_sms(account_id);
+`);
 }

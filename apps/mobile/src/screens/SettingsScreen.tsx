@@ -36,7 +36,9 @@ const ACCENT_LIST: Array<{ id: AccentTheme; label: string; previewColor: string 
   { id: 'rose', label: 'Rose', previewColor: '#FB7185' },
 ];
 
-export const SettingsScreen: React.FC = () => {
+export const SettingsScreen: React.FC<{ onNavigateToSmsImport?: () => void }> = ({
+  onNavigateToSmsImport,
+}) => {
   const { mode, accent, resolvedMode, colors, tokens, setMode, setAccent } = useAppTheme();
   const {
     stats,
@@ -916,6 +918,30 @@ export const SettingsScreen: React.FC = () => {
                     </Text>
                     <Text color={colors.textMuted} fontSize={11} mt={1}>
                       Restore your data from a copied JSON backup.
+                    </Text>
+                  </VStack>
+                </HStack>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => onNavigateToSmsImport?.()}
+                style={[
+                  styles.mgmtBtn,
+                  {
+                    backgroundColor: colors.surfaceSubtle,
+                    borderColor: colors.border,
+                    borderRadius: tokens.radius.sm,
+                  },
+                ]}
+              >
+                <HStack space="sm" alignItems="center">
+                  <Feather name="message-square" size={18} color={colors.accentPrimary} />
+                  <VStack flex={1}>
+                    <Text color={colors.textPrimary} fontSize={14} fontWeight="600">
+                      Import from SMS
+                    </Text>
+                    <Text color={colors.textMuted} fontSize={11} mt={1}>
+                      Paste bank SMS to auto-detect spends; bill payments are excluded.
                     </Text>
                   </VStack>
                 </HStack>

@@ -172,6 +172,7 @@ describe('API: Phase 5 Shared Groups Integration', () => {
         date: '2026-09-07',
         payers: [{ memberId: memberAId, amountMinor: 10000 }],
         splitMethod: 'equal',
+
         allocations: [{ memberId: memberAId }, { memberId: memberBId }],
         notes: 'Villa booking in North Goa',
       }),
@@ -283,6 +284,135 @@ describe('API: Phase 5 Shared Groups Integration', () => {
     const settlementEdge = data.graph.edges.find((e: any) => e.label === 'Settled');
     expect(settlementEdge).toBeDefined();
     expect(settlementEdge.amountMinor).toBe(5000);
+  });
+
+  it('Graph endpoint ?simplify=true returns minimized net transfers', async () => {
+    const res = await app.request(`/groups/${groupId}/graph?simplify=true`, {
+      headers: { Authorization: `Bearer ${tokenA}` },
+    });
+
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as any;
+    expect(data.simplified).toBe(true);
+    expect(data.graph).toBeDefined();
+
+    // Simplified graph: member nodes only, no expense nodes
+    const memberNodes = data.graph.nodes.filter((n: any) => n.type === 'member');
+    expect(memberNodes.length).toBe(2);
+    expect(data.graph.nodes.some((n: any) => n.type === 'expense')).toBe(false);
+
+    // Net edges must be member->member 'Net owed' only
+    for (const e of data.graph.edges) {
+      expect(e.label).toBe('Net owed');
+      expect(e.source.startsWith('member-')).toBe(true);
+      expect(e.target.startsWith('member-')).toBe(true);
+      expect(e.amountMinor).toBeGreaterThan(0);
+    }
+  });
+
+  it('Graph endpoint ?simplify=true nets circular debts down', async () => {
+    // Create group with a 3-way debt situation, then verify net collapse.
+    const resGroup = await app.request('/groups', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenA}` },
+      body: JSON.stringify({ name: 'Cycle Group' }),
+    });
+    expect(resGroup.status).toBe(201);
+    const g = (await resGroup.json()) as any;
+    const cycleGroupId = g.group.id as string;
+
+    // Register users B and C, generate invites, join
+    const resRegB = await app.request('/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'b-4497@cycle.test', password: 'Password123!', name: 'B' }),
+    });
+    expect(resRegB.status).toBe(200);
+    const tokenB2 = ((await resRegB.json()) as any).token;
+
+    const resRegC = await app.request('/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'c-6216@cycle.test', password: 'Password123!', name: 'C' }),
+    });
+    expect(resRegC.status).toBe(200);
+    const tokenC = ((await resRegC.json()) as any).token;
+
+    const resInvB = await app.request(`/groups/${cycleGroupId}/invites`, {
+      method: 'POST', headers: { Authorization: `Bearer ${tokenA}` },
+    });
+    expect(resInvB.status).toBe(201);
+    const invB = ((await resInvB.json()) as any).invitation.inviteCode as string;
+
+    const resInvC = await app.request(`/groups/${cycleGroupId}/invites`, {
+      method: 'POST', headers: { Authorization: `Bearer ${tokenA}` },
+    });
+    expect(resInvC.status).toBe(200);
+    const invC = ((await resInvC.json()) as any).invitation.inviteCode as string;
+
+    const resJoinB = await app.request('/groups/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenB2}` },
+      body: JSON.stringify({ inviteCode: invB, name: 'B' }),
+    });
+    expect(resJoinB.status).toBe(200);
+
+    const resJoinC = await app.request('/groups/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenC}` },
+      body: JSON.stringify({ inviteCode: invC, name: 'C' }),
+    });
+    expect(resJoinC.status).toBe(200);
+
+    // Get member IDs
+    const resGroupDetail = await app.request(`/groups/${cycleGroupId}`, {
+      headers: { Authorization: `Bearer ${tokenA}` },
+    });
+    const gd = (await resGroupDetail.json()) as any;
+    const ids = gd.members.reduce((acc: Record<string, string>, m: any) => {
+      acc[m.name] = m.id; return acc;
+    }, {} as Record<string, string>);
+    expect(ids['Alice']).toBeDefined();
+    expect(ids['B']).toBeDefined(); // B named at join
+    expect(ids['C']).toBeDefined();
+
+    // Expense 300: A pays all, split equally (100 each). B owes 100, C owes 100.
+    const resExp = await app.request(`/groups/${cycleGroupId}/expenses`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenA}` },
+      body: JSON.stringify({
+        title: 'Dinner', amountMinor: 30000, currency: 'INR', date: '2026-09-07',
+        payers: [{ memberId: ids['Alice'], amountMinor: 30000 }],
+        splitMethod: 'equal',
+        allocations: [{ memberId: ids['Alice'] }, { memberId: ids['B'] }, { memberId: ids['C'] }],
+        notes: 'Cycle test expense',
+      }),
+    });
+    expect(resExp.status).toBe(201);
+
+    // B settles the 100 to A. Net: everyone at zero except C owes 100.
+    const resSettle = await app.request(`/groups/${cycleGroupId}/settlements`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenB2}` },
+      body: JSON.stringify({
+        fromMemberId: ids['B'], toMemberId: ids['Alice'],
+        amountMinor: 10000, currency: 'INR',
+      }),
+    });
+    expect(resSettle.status).toBe(201);
+
+    const res = await app.request(`/groups/${cycleGroupId}/graph?simplify=true`, {
+      headers: { Authorization: `Bearer ${tokenA}` },
+    });
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as any;
+    expect(data.simplified).toBe(true);
+
+    // Net result: exactly 1 transfer C -> A of 100 (B is settled, cycle collapsed)
+    expect(data.graph.edges).toHaveLength(1);
+    const edge = data.graph.edges[0];
+    expect(edge.label).toBe('Net owed');
+    expect(edge.amountMinor).toBe(10000);
   });
 
   it('Explanation endpoint returns accurate balance and origins', async () => {
