@@ -245,6 +245,7 @@ export interface LedgerContextValue {
   deleteGroup: (id: string) => Promise<void>;
   getMemberExplanation: (memberId: string) => Promise<MemberSettlementExplanation | null>;
   getGroupDependencyGraph: () => Promise<DependencyGraph | null>;
+  getGroupDependencyGraphSimplified: () => Promise<DependencyGraph | null>;
 
   seedDemoData: () => Promise<void>;
   clearAllData: () => Promise<void>;
@@ -2485,6 +2486,14 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     [services]
   );
 
+  const getGroupDependencyGraphSimplified = useCallback(
+    async (): Promise<DependencyGraph | null> => {
+      if (!services || !activeGroupIdRef.current) return null;
+      return services.groupUseCases.getDependencyGraphSimplified(activeGroupIdRef.current);
+    },
+    [services]
+  );
+
   const completeOnboarding = useCallback(
     async (firstAccount?: {
       name: string;
@@ -2772,6 +2781,7 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       deleteGroup,
       getMemberExplanation,
       getGroupDependencyGraph,
+      getGroupDependencyGraphSimplified,
       seedDemoData,
       clearAllData,
       hasCompletedOnboarding,
@@ -2885,6 +2895,7 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       deleteGroup,
       getMemberExplanation,
       getGroupDependencyGraph,
+      getGroupDependencyGraphSimplified,
       seedDemoData,
       clearAllData,
       hasCompletedOnboarding,

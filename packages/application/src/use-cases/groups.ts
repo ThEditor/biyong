@@ -138,4 +138,34 @@ export class GroupUseCases {
     const memberNames = new Map(members.map((m) => [m.id, m.name]));
     return buildDependencyGraph(memberNames, expenses, settlements);
   }
+
+  /**
+   * Simplified dependency graph: member-only nodes with minimized net
+   * transfers (greedy min-cash-flow). Fewest payments to settle the group.
+   */
+  async getDependencyGraphSimplified(groupId: string): Promise<DependencyGraph> {
+    const members = await this.groupRepo.getMembers(groupId);
+    const expenses = await this.groupRepo.getExpenses(groupId);
+    const settlements = await this.groupRepo.getSettlements(groupId);
+
+    const memberIds = members.map((m) => m.id);
+    const balances = calculateNetBalances(memberIds, expenses, settlements);
+    const transfers = simplifyDebts(balances);
+
+    const nodes: DependencyGraph['nodes'] = members.map((m) => ({
+      id: `member-${m.id}`,
+      label: m.name,
+      type: 'member' as const,
+      data: { memberId: m.id },
+    }));
+    const edges: DependencyGraph['edges'] = transfers.map((t, i) => ({
+      id: `net-${i}-${t.fromMemberId}-${t.toMemberId}`,
+      source: `member-${t.fromMemberId}`,
+      target: `member-${t.toMemberId}`,
+      label: 'Net owed',
+      amountMinor: t.amountMinor,
+    }));
+
+    return { nodes, edges };
+  }
 }

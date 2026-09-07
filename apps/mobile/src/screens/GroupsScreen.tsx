@@ -48,6 +48,7 @@ export const GroupsScreen: React.FC<GroupsScreenProps> = ({ onBack }) => {
     deleteGroup,
     deleteGroupExpense,
     getGroupDependencyGraph,
+    getGroupDependencyGraphSimplified,
     createGroupInvite,
     user,
   } = useLedger();
@@ -77,17 +78,21 @@ export const GroupsScreen: React.FC<GroupsScreenProps> = ({ onBack }) => {
   const [graphData, setGraphData] = useState<DependencyGraph | null>(null);
   const [isGraphLoading, setIsGraphLoading] = useState(false);
   const [graphFilter, setGraphFilter] = useState<'all' | 'pay' | 'share' | 'settle'>('all');
+  const [simplifyDebts, setSimplifyDebts] = useState(false);
 
   // Load graph data when switching to graph tab
   useEffect(() => {
     if (activeGroupId && activeTab === 'graph') {
       setIsGraphLoading(true);
-      getGroupDependencyGraph()
+      const loader = simplifyDebts
+        ? getGroupDependencyGraphSimplified
+        : getGroupDependencyGraph;
+      loader()
         .then((res) => setGraphData(res))
         .catch((err) => console.error('Failed to load dependency graph:', err))
         .finally(() => setIsGraphLoading(false));
     }
-  }, [activeGroupId, activeTab, activeGroupExpenses, activeGroupSettlements]);
+  }, [activeGroupId, activeTab, activeGroupExpenses, activeGroupSettlements, simplifyDebts]);
 
   const currency = activeGroup?.currency ?? 'INR';
 
@@ -996,8 +1001,28 @@ export const GroupsScreen: React.FC<GroupsScreenProps> = ({ onBack }) => {
                 </View>
               </View>
 
-              {/* Filter Pills */}
+              {/* Simplify toggle + Filter Pills */}
               <View style={styles.graphFilterRow}>
+                <TouchableOpacity
+                  onPress={() => setSimplifyDebts((s) => !s)}
+                  style={[
+                    styles.graphFilterChip,
+                    {
+                      backgroundColor: simplifyDebts ? colors.accentPrimary : colors.surfaceSubtle,
+                      borderColor: simplifyDebts ? colors.accentPrimary : colors.border,
+                      borderRadius: tokens.radius.sm,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.graphFilterChipText,
+                      { color: simplifyDebts ? colors.accentForeground : colors.textSecondary },
+                    ]}
+                  >
+                    {simplifyDebts ? 'Simplified' : 'Simplify Debts'}
+                  </Text>
+                </TouchableOpacity>
                 {(
                   [
                     { id: 'all', label: 'All Flows' },
@@ -1040,6 +1065,13 @@ export const GroupsScreen: React.FC<GroupsScreenProps> = ({ onBack }) => {
                 currency={currency}
                 activeFilter={graphFilter}
               />
+
+              {simplifyDebts && (
+                <Text style={[styles.loadingText, { color: colors.textMuted, textAlign: 'center' }]}>
+                  Showing net transfers only: {graphData.edges.length} payment
+                  {graphData.edges.length === 1 ? '' : 's'} settles everything.
+                </Text>
+              )}
 
               {/* Flow Edges Detailed Audit */}
               <View style={styles.edgesList}>
