@@ -22,6 +22,7 @@ import { ReportsScreen } from './src/screens/ReportsScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { NetWorthScreen } from './src/screens/NetWorthScreen';
 import { IntelligenceScreen } from './src/screens/IntelligenceScreen';
+import { SmsImportScreen } from './src/screens/SmsImportScreen';
 import { QuickAddModal } from './src/components/QuickAddModal';
 import { OnboardingModal } from './src/components/OnboardingModal';
 import { AuthModal } from './src/components/AuthModal';
@@ -35,7 +36,8 @@ type ScreenType =
   | 'reports'
   | 'settings'
   | 'networth'
-  | 'intelligence';
+  | 'intelligence'
+  | 'smsimport';
 
 interface BottomTabItem {
   id: ScreenType;
@@ -118,11 +120,13 @@ function MainNavigator() {
       case 'reports':
         return <ReportsScreen />;
       case 'settings':
-        return <SettingsScreen />;
+        return <SettingsScreen onNavigateToSmsImport={() => setActiveScreen('smsimport')} />;
       case 'networth':
         return <NetWorthScreen onBack={() => setActiveScreen('home')} />;
       case 'intelligence':
         return <IntelligenceScreen onBack={() => setActiveScreen('home')} />;
+      case 'smsimport':
+        return <SmsImportScreen onBack={() => setActiveScreen('settings')} />;
     }
   };
 
@@ -210,7 +214,9 @@ function MainNavigator() {
 
           {/* Right Tabs (Plan, Settings) */}
           {RIGHT_TABS.map((tab) => {
-            const isActive = activeScreen === tab.id;
+            const isActive =
+              activeScreen === tab.id ||
+              (tab.id === 'settings' && activeScreen === 'smsimport');
             return (
               <TouchableOpacity
                 key={tab.id}

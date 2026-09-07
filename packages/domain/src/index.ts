@@ -13,4 +13,5 @@ export * from './reimbursements.js';
 export * from './subscriptions.js';
 export * from './export-import.js';
 export * from './intelligence.js';
+export * from './sms-parser.js';
 
