@@ -78,10 +78,10 @@ describe('Application: WealthUseCases', () => {
       const acc1: Account = {
         id: 'acc-1',
         name: 'HDFC Savings',
-        type: 'savings',
+        type: 'bank',
         currency: 'INR',
         initialBalanceMinor: 5000000, // ₹50,000
-        isActive: true,
+        isArchived: false,
         createdAt: '2026-01-01T00:00:00.000Z',
         updatedAt: '2026-01-01T00:00:00.000Z',
       };
@@ -91,7 +91,7 @@ describe('Application: WealthUseCases', () => {
         type: 'cash',
         currency: 'INR',
         initialBalanceMinor: 2000000, // ₹20,000
-        isActive: true,
+        isArchived: false,
         createdAt: '2026-01-01T00:00:00.000Z',
         updatedAt: '2026-01-01T00:00:00.000Z',
       };
@@ -113,6 +113,9 @@ describe('Application: WealthUseCases', () => {
         toAccountId: null,
         isRecurring: false,
         recurringFrequency: null,
+        isReimbursable: false,
+        reimbursementStatus: null,
+        receiptAttachmentId: null,
         createdAt: '2026-09-01T00:00:00.000Z',
         updatedAt: '2026-09-01T00:00:00.000Z',
       });
@@ -130,6 +133,9 @@ describe('Application: WealthUseCases', () => {
         toAccountId: null,
         isRecurring: false,
         recurringFrequency: null,
+        isReimbursable: false,
+        reimbursementStatus: null,
+        receiptAttachmentId: null,
         createdAt: '2026-09-02T00:00:00.000Z',
         updatedAt: '2026-09-02T00:00:00.000Z',
       });
@@ -148,6 +154,9 @@ describe('Application: WealthUseCases', () => {
         notes: null,
         isRecurring: false,
         recurringFrequency: null,
+        isReimbursable: false,
+        reimbursementStatus: null,
+        receiptAttachmentId: null,
         createdAt: '2026-09-03T00:00:00.000Z',
         updatedAt: '2026-09-03T00:00:00.000Z',
       });
@@ -271,10 +280,10 @@ describe('Application: WealthUseCases', () => {
       await accountRepo.create({
         id: 'acc-1',
         name: 'Bank',
-        type: 'savings',
+        type: 'bank',
         currency: 'INR',
         initialBalanceMinor: 1000000, // ₹10,000 initial balance
-        isActive: true,
+        isArchived: false,
         createdAt: '2026-01-01T00:00:00.000Z',
         updatedAt: '2026-01-01T00:00:00.000Z',
       });
@@ -293,6 +302,9 @@ describe('Application: WealthUseCases', () => {
         toAccountId: null,
         isRecurring: false,
         recurringFrequency: null,
+        isReimbursable: false,
+        reimbursementStatus: null,
+        receiptAttachmentId: null,
         createdAt: '2026-08-05T00:00:00.000Z',
         updatedAt: '2026-08-05T00:00:00.000Z',
       });

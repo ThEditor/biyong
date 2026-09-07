@@ -101,7 +101,7 @@ describe('Phase 7 Workflows: Peer Lending & Borrowing', () => {
   });
 
   it('applies partial repayment without settling debt', () => {
-    const debt = mockDebts[0];
+    const debt = mockDebts[0]!;
     const { updatedDebt, actualPaymentMinor, isSettled } = applyRepayment(debt, 10000);
 
     expect(actualPaymentMinor).toBe(10000);
@@ -111,7 +111,7 @@ describe('Phase 7 Workflows: Peer Lending & Borrowing', () => {
   });
 
   it('applies exact repayment and marks debt as settled', () => {
-    const debt = mockDebts[0];
+    const debt = mockDebts[0]!;
     const { updatedDebt, actualPaymentMinor, isSettled } = applyRepayment(debt, 30000);
 
     expect(actualPaymentMinor).toBe(30000);
@@ -121,7 +121,7 @@ describe('Phase 7 Workflows: Peer Lending & Borrowing', () => {
   });
 
   it('clamps overpayment to remaining amount and settles debt', () => {
-    const debt = mockDebts[0]; // remaining 30000
+    const debt = mockDebts[0]!; // remaining 30000
     const { updatedDebt, actualPaymentMinor, isSettled } = applyRepayment(debt, 50000);
 
     expect(actualPaymentMinor).toBe(30000);
@@ -131,8 +131,8 @@ describe('Phase 7 Workflows: Peer Lending & Borrowing', () => {
   });
 
   it('throws when repayment amount is non-positive', () => {
-    expect(() => applyRepayment(mockDebts[0], 0)).toThrow('Payment amount must be positive');
-    expect(() => applyRepayment(mockDebts[0], -100)).toThrow('Payment amount must be positive');
+    expect(() => applyRepayment(mockDebts[0]!, 0)).toThrow('Payment amount must be positive');
+    expect(() => applyRepayment(mockDebts[0]!, -100)).toThrow('Payment amount must be positive');
   });
 });
 
