@@ -18,13 +18,17 @@ function formatMinorToDecimal(amountMinor: number): string {
 }
 
 /**
- * Escapes a field according to RFC 4180 rules.
+ * Escapes a field according to RFC 4180 rules, and protects against CSV formula injection (CWE-1236).
  */
 function escapeCsvField(val: unknown): string {
   if (val === null || val === undefined) {
     return '';
   }
-  const str = String(val);
+  let str = String(val);
+  // Neutralize CSV formula injection: fields starting with =, +, -, @, \t, or \r
+  if (/^[=+\-@\t\r]/.test(str)) {
+    str = `'${str}`;
+  }
   if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
     return `"${str.replace(/"/g, '""')}"`;
   }

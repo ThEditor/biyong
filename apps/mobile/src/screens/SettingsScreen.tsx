@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   TextInput,
   Platform,
+  Share,
 } from 'react-native';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import {
@@ -173,9 +174,17 @@ export const SettingsScreen: React.FC = () => {
       const data = await exportFullLedger();
       const jsonStr = JSON.stringify(data, null, 2);
       await Clipboard.setStringAsync(jsonStr);
+      try {
+        await Share.share({
+          message: jsonStr,
+          title: 'Biyong Ledger Backup',
+        });
+      } catch {
+        // Share sheet dismissed or not supported on target
+      }
       Alert.alert(
         'Export Successful',
-        `Full JSON ledger copied to clipboard!\n\nExported: ${data.accounts.length} accounts, ${data.transactions.length} transactions, ${data.budgets.length} budgets, ${data.peerDebts.length} peer debts, ${data.subscriptions.length} subscriptions.`
+        `Full JSON ledger exported and copied to clipboard!\n\nExported: ${data.accounts.length} accounts, ${data.transactions.length} transactions, ${data.budgets.length} budgets, ${data.peerDebts?.length ?? 0} peer debts, ${data.subscriptions?.length ?? 0} subscriptions.`
       );
     } catch (err: any) {
       Alert.alert('Export Failed', err?.message || 'Failed to export ledger.');
@@ -186,7 +195,15 @@ export const SettingsScreen: React.FC = () => {
     try {
       const csv = await exportTransactionsCsv();
       await Clipboard.setStringAsync(csv);
-      Alert.alert('CSV Copied', 'RFC 4180 Transactions CSV copied to clipboard!');
+      try {
+        await Share.share({
+          message: csv,
+          title: 'Biyong Transactions CSV',
+        });
+      } catch {
+        // Share sheet dismissed or not supported on target
+      }
+      Alert.alert('CSV Exported', 'RFC 4180 Transactions CSV exported and copied to clipboard!');
     } catch (err: any) {
       Alert.alert('Export Failed', err?.message || 'Failed to export CSV.');
     }
@@ -196,7 +213,15 @@ export const SettingsScreen: React.FC = () => {
     try {
       const csv = await exportAccountsCsv();
       await Clipboard.setStringAsync(csv);
-      Alert.alert('CSV Copied', 'Accounts CSV copied to clipboard!');
+      try {
+        await Share.share({
+          message: csv,
+          title: 'Biyong Accounts CSV',
+        });
+      } catch {
+        // Share sheet dismissed or not supported on target
+      }
+      Alert.alert('CSV Exported', 'Accounts CSV exported and copied to clipboard!');
     } catch (err: any) {
       Alert.alert('Export Failed', err?.message || 'Failed to export CSV.');
     }

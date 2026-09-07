@@ -51,13 +51,34 @@ import {
   forecastCashFlow,
   detectAnomalies,
 } from '@biyong/domain';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomInt, pbkdf2Sync, randomBytes, timingSafeEqual } from 'node:crypto';
+
+function hashPassword(password: string, salt: string): string {
+  return pbkdf2Sync(password, salt, 100000, 32, 'sha256').toString('hex');
+}
+
+function verifyPassword(password: string, salt: string, expectedHash: string): boolean {
+  try {
+    const hash = pbkdf2Sync(password, salt, 100000, 32, 'sha256');
+    const bufExpected = Buffer.from(expectedHash, 'hex');
+    if (hash.length !== bufExpected.length) return false;
+    return timingSafeEqual(hash, bufExpected);
+  } catch {
+    return false;
+  }
+}
 
 export function createApp() {
   const app = new Hono();
 
   app.use('*', logger());
   app.use('*', cors());
+
+  // Global Error Handler
+  app.onError((err, c) => {
+    console.error('Unhandled API Error:', err);
+    return c.json({ error: err.message || 'Internal Server Error' }, 500);
+  });
 
   // Health check
   app.get('/health', (c) => {
@@ -70,7 +91,7 @@ export function createApp() {
   });
 
   // In-memory store for Phase 0 demonstration (can switch to Drizzle DB client when PG URL provided)
-  const usersMap = new Map<string, { id: string; email: string; name: string; password: string }>();
+  const usersMap = new Map<string, { id: string; email: string; name: string; passwordHash: string; salt: string }>();
   const sessionsMap = new Map<string, { userId: string; token: string; expiresAt: string }>();
   const syncedOpsMap = new Map<string, any>();
 
@@ -96,7 +117,7 @@ export function createApp() {
   const budgetsMap = new Map<string, Budget & { userId: string }>();
   const goalsMap = new Map<string, Goal & { userId: string }>();
 
-  // Helper to authenticate request from Authorization header
+  // Helper to authenticate request from Authorization header with expiry validation
   function getAuthUser(c: any): { id: string; email: string; name: string } | null {
     const authHeader = c.req.header('Authorization') || c.req.header('authorization');
     if (!authHeader) return null;
@@ -105,6 +126,12 @@ export function createApp() {
 
     const session = sessionsMap.get(token);
     if (!session) return null;
+
+    // Validate expiration
+    if (new Date(session.expiresAt).getTime() <= Date.now()) {
+      sessionsMap.delete(token);
+      return null;
+    }
 
     const user = Array.from(usersMap.values()).find((u) => u.id === session.userId);
     if (!user) return null;
@@ -126,7 +153,9 @@ export function createApp() {
     }
 
     const userId = randomUUID();
-    usersMap.set(email, { id: userId, email, name, password });
+    const salt = randomBytes(16).toString('hex');
+    const passwordHash = hashPassword(password, salt);
+    usersMap.set(email, { id: userId, email, name, passwordHash, salt });
 
     const token = `tok_${randomUUID()}`;
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -148,7 +177,7 @@ export function createApp() {
 
     const { email, password } = parsed.data;
     const user = usersMap.get(email);
-    if (!user || user.password !== password) {
+    if (!user || !verifyPassword(password, user.salt, user.passwordHash)) {
       return c.json({ error: 'Invalid credentials' }, 401);
     }
 
@@ -163,6 +192,17 @@ export function createApp() {
     });
   });
 
+  app.post('/auth/logout', (c) => {
+    const authHeader = c.req.header('Authorization') || c.req.header('authorization');
+    if (authHeader) {
+      const token = authHeader.replace(/^Bearer\s+/i, '');
+      if (token) {
+        sessionsMap.delete(token);
+      }
+    }
+    return c.json({ success: true, message: 'Logged out successfully' }, 200);
+  });
+
   app.get('/auth/me', (c) => {
     const user = getAuthUser(c);
     if (!user) return c.json({ error: 'Unauthorized' }, 401);
@@ -173,13 +213,18 @@ export function createApp() {
   // Sync Routes
   app.post('/sync/push', async (c) => {
     const body = await c.req.json();
-    const operations = body.operations;
+    const operations = body?.operations;
     if (!Array.isArray(operations)) {
       return c.json({ error: 'Invalid operations array' }, 400);
+    }
+    if (operations.length > 1000) {
+      return c.json({ error: 'Operations batch exceeds limit of 1000' }, 400);
     }
 
     const syncedIds: string[] = [];
     const rejected: { id: string; reason: string }[] = [];
+
+    const authUser = getAuthUser(c);
 
     for (const rawOp of operations) {
       const parsed = SyncOperationSchema.safeParse(rawOp);
@@ -195,51 +240,98 @@ export function createApp() {
         continue;
       }
 
-      syncedOpsMap.set(op.id, op);
-      syncedIds.push(op.id);
-
-      const authUser = getAuthUser(c);
-      const opUserId = authUser?.id || (op.payload as any)?.userId || 'default';
+      const opUserId = authUser?.id || (op.payload as any)?.userId || (op.deviceId ? `guest_${op.deviceId}` : 'default');
       const payload = op.payload as any;
+
       if (payload) {
+        // Multi-tenant check: do not allow overwriting or deleting an entity belonging to another registered user
+        const checkOwnership = (existing: { userId?: string } | undefined): boolean => {
+          if (!existing || !existing.userId) return true;
+          return existing.userId === opUserId;
+        };
+
         if (op.entityType === 'account') {
+          if (!checkOwnership(accountsMap.get(op.entityId))) {
+            rejected.push({ id: op.id, reason: 'Forbidden: entity belongs to another user' });
+            continue;
+          }
           if (op.operationType === 'delete') accountsMap.delete(op.entityId);
           else accountsMap.set(op.entityId, { ...payload, userId: opUserId });
         } else if (op.entityType === 'category') {
+          if (!checkOwnership(categoriesMap.get(op.entityId))) {
+            rejected.push({ id: op.id, reason: 'Forbidden: entity belongs to another user' });
+            continue;
+          }
           if (op.operationType === 'delete') categoriesMap.delete(op.entityId);
           else categoriesMap.set(op.entityId, { ...payload, userId: opUserId });
         } else if (op.entityType === 'transaction') {
+          if (!checkOwnership(transactionsMap.get(op.entityId))) {
+            rejected.push({ id: op.id, reason: 'Forbidden: entity belongs to another user' });
+            continue;
+          }
           if (op.operationType === 'delete') transactionsMap.delete(op.entityId);
           else transactionsMap.set(op.entityId, { ...payload, userId: opUserId });
         } else if (op.entityType === 'budget') {
+          if (!checkOwnership(budgetsMap.get(op.entityId))) {
+            rejected.push({ id: op.id, reason: 'Forbidden: entity belongs to another user' });
+            continue;
+          }
           if (op.operationType === 'delete') budgetsMap.delete(op.entityId);
           else budgetsMap.set(op.entityId, { ...payload, userId: opUserId });
         } else if (op.entityType === 'goal') {
+          if (!checkOwnership(goalsMap.get(op.entityId))) {
+            rejected.push({ id: op.id, reason: 'Forbidden: entity belongs to another user' });
+            continue;
+          }
           if (op.operationType === 'delete') goalsMap.delete(op.entityId);
           else goalsMap.set(op.entityId, { ...payload, userId: opUserId });
         } else if (op.entityType === 'investment') {
+          if (!checkOwnership(investmentsMap.get(op.entityId))) {
+            rejected.push({ id: op.id, reason: 'Forbidden: entity belongs to another user' });
+            continue;
+          }
           if (op.operationType === 'delete') investmentsMap.delete(op.entityId);
           else investmentsMap.set(op.entityId, { ...payload, userId: opUserId });
         } else if (op.entityType === 'liability') {
+          if (!checkOwnership(liabilitiesMap.get(op.entityId))) {
+            rejected.push({ id: op.id, reason: 'Forbidden: entity belongs to another user' });
+            continue;
+          }
           if (op.operationType === 'delete') liabilitiesMap.delete(op.entityId);
           else liabilitiesMap.set(op.entityId, { ...payload, userId: opUserId });
         } else if (op.entityType === 'peer_debt') {
+          if (!checkOwnership(peerDebtsMap.get(op.entityId))) {
+            rejected.push({ id: op.id, reason: 'Forbidden: entity belongs to another user' });
+            continue;
+          }
           if (op.operationType === 'delete') peerDebtsMap.delete(op.entityId);
           else peerDebtsMap.set(op.entityId, { ...payload, userId: opUserId });
         } else if (op.entityType === 'reimbursement_claim') {
+          if (!checkOwnership(reimbursementsMap.get(op.entityId))) {
+            rejected.push({ id: op.id, reason: 'Forbidden: entity belongs to another user' });
+            continue;
+          }
           if (op.operationType === 'delete') reimbursementsMap.delete(op.entityId);
           else reimbursementsMap.set(op.entityId, { ...payload, userId: opUserId });
         } else if (op.entityType === 'subscription') {
+          if (!checkOwnership(subscriptionsMap.get(op.entityId))) {
+            rejected.push({ id: op.id, reason: 'Forbidden: entity belongs to another user' });
+            continue;
+          }
           if (op.operationType === 'delete') subscriptionsMap.delete(op.entityId);
           else subscriptionsMap.set(op.entityId, { ...payload, userId: opUserId });
         }
       }
+
+      syncedOpsMap.set(op.id, op);
+      syncedIds.push(op.id);
     }
 
     return c.json({ syncedIds, rejected });
   });
 
   app.get('/sync/pull', (c) => {
+    const authUser = getAuthUser(c);
     const cursor = c.req.query('cursor');
     const allOps = Array.from(syncedOpsMap.values());
     let filteredOps = allOps;
@@ -251,13 +343,55 @@ export function createApp() {
       }
     }
 
+    // Tenant isolation: if authenticated, filter by user/groups.
+    // If not authenticated, only return non-user operations, never registered user data.
+    const userGroupIds = new Set<string>();
+    if (authUser) {
+      for (const [groupId, members] of groupMembersMap.entries()) {
+        if (members.some((m) => m.userId === authUser.id)) {
+          userGroupIds.add(groupId);
+        }
+      }
+    }
+
+    const authorizedOps = filteredOps.filter((op) => {
+      const payload = op.payload as any;
+      if (authUser) {
+        if (payload?.userId === authUser.id) return true;
+        if (payload?.ownerId === authUser.id) return true;
+        if (op.entityType === 'group' && userGroupIds.has(op.entityId)) return true;
+        if (
+          (op.entityType === 'group_member' ||
+            op.entityType === 'group_expense' ||
+            op.entityType === 'settlement') &&
+          userGroupIds.has(payload?.groupId)
+        ) {
+          return true;
+        }
+        // Check stored entity ownership
+        if (accountsMap.get(op.entityId)?.userId === authUser.id) return true;
+        if (transactionsMap.get(op.entityId)?.userId === authUser.id) return true;
+        if (budgetsMap.get(op.entityId)?.userId === authUser.id) return true;
+        if (goalsMap.get(op.entityId)?.userId === authUser.id) return true;
+        if (investmentsMap.get(op.entityId)?.userId === authUser.id) return true;
+        if (liabilitiesMap.get(op.entityId)?.userId === authUser.id) return true;
+        if (peerDebtsMap.get(op.entityId)?.userId === authUser.id) return true;
+        if (reimbursementsMap.get(op.entityId)?.userId === authUser.id) return true;
+        if (subscriptionsMap.get(op.entityId)?.userId === authUser.id) return true;
+        return false;
+      } else {
+        // Unauthenticated client cannot access any registered user data
+        return !payload?.userId && !payload?.ownerId;
+      }
+    });
+
     const latestTimestamp =
-      filteredOps.length > 0
-        ? filteredOps[filteredOps.length - 1].timestamp
+      authorizedOps.length > 0
+        ? authorizedOps[authorizedOps.length - 1].timestamp
         : cursor || new Date().toISOString();
 
     return c.json({
-      operations: filteredOps,
+      operations: authorizedOps,
       nextCursor: latestTimestamp,
     });
   });
@@ -375,6 +509,11 @@ export function createApp() {
       return c.json({ error: 'Invitation has expired' }, 400);
     }
 
+    // Security check: If the invite was restricted to a specific email, verify match
+    if (invitation.email && invitation.email.toLowerCase().trim() !== user.email.toLowerCase().trim()) {
+      return c.json({ error: 'This invitation was issued to a different email address' }, 403);
+    }
+
     const group = groupsMap.get(invitation.groupId);
     if (!group) {
       return c.json({ error: 'Group not found' }, 404);
@@ -485,11 +624,11 @@ export function createApp() {
       return c.json({ invitation: existingInvite }, 200);
     }
 
-    // Generate 6-char random invite code (e.g. INV-XXXXXX)
+    // Generate 6-char cryptographically secure random invite code (e.g. INV-XXXXXX)
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let codePart = '';
     for (let i = 0; i < 6; i++) {
-      codePart += chars.charAt(Math.floor(Math.random() * chars.length));
+      codePart += chars.charAt(randomInt(0, chars.length));
     }
     const inviteCode = `INV-${codePart}`;
 
@@ -742,6 +881,16 @@ export function createApp() {
       return c.json({ error: 'Members specified in settlement must belong to the group' }, 400);
     }
 
+    const callerMember = members.find((m) => m.userId === user.id);
+    if (
+      callerMember &&
+      callerMember.id !== parsed.data.fromMemberId &&
+      callerMember.id !== parsed.data.toMemberId &&
+      group.ownerId !== user.id
+    ) {
+      return c.json({ error: 'Settlement must involve the recording member or group owner' }, 403);
+    }
+
     const now = new Date().toISOString();
     const settlement: Settlement = {
       id: randomUUID(),
@@ -878,6 +1027,10 @@ export function createApp() {
       ...parsed.data,
       userId: user.id,
     };
+
+    if (investmentsMap.has(investment.id) && investmentsMap.get(investment.id)!.userId !== user.id) {
+      return c.json({ error: 'Conflict: resource with this ID is owned by another user' }, 409);
+    }
 
     investmentsMap.set(investment.id, investment);
 
@@ -1028,6 +1181,10 @@ export function createApp() {
       ...parsed.data,
       userId: user.id,
     };
+
+    if (liabilitiesMap.has(liability.id) && liabilitiesMap.get(liability.id)!.userId !== user.id) {
+      return c.json({ error: 'Conflict: resource with this ID is owned by another user' }, 409);
+    }
 
     liabilitiesMap.set(liability.id, liability);
 
@@ -1260,6 +1417,10 @@ export function createApp() {
       ...parsed.data,
       userId: user.id,
     };
+
+    if (peerDebtsMap.has(debt.id) && peerDebtsMap.get(debt.id)!.userId !== user.id) {
+      return c.json({ error: 'Conflict: resource with this ID is owned by another user' }, 409);
+    }
 
     peerDebtsMap.set(debt.id, debt);
 
@@ -1495,6 +1656,10 @@ export function createApp() {
       userId: user.id,
     };
 
+    if (reimbursementsMap.has(claim.id) && reimbursementsMap.get(claim.id)!.userId !== user.id) {
+      return c.json({ error: 'Conflict: resource with this ID is owned by another user' }, 409);
+    }
+
     reimbursementsMap.set(claim.id, claim);
 
     const syncOp = {
@@ -1650,6 +1815,10 @@ export function createApp() {
       ...parsed.data,
       userId: user.id,
     };
+
+    if (subscriptionsMap.has(subscription.id) && subscriptionsMap.get(subscription.id)!.userId !== user.id) {
+      return c.json({ error: 'Conflict: resource with this ID is owned by another user' }, 409);
+    }
 
     subscriptionsMap.set(subscription.id, subscription);
 
@@ -1837,57 +2006,126 @@ export function createApp() {
     }
 
     const data = parsed.data;
+    const idMap = new Map<string, string>();
     let count = 0;
 
     for (const acc of data.accounts) {
-      accountsMap.set(acc.id, { ...acc, userId: user.id });
+      let accId = acc.id;
+      if (accountsMap.has(accId) && accountsMap.get(accId)!.userId !== user.id) {
+        accId = randomUUID();
+        idMap.set(acc.id, accId);
+      }
+      accountsMap.set(accId, { ...acc, id: accId, userId: user.id });
       count++;
     }
     for (const cat of data.categories) {
-      categoriesMap.set(cat.id, { ...cat, userId: user.id });
+      let catId = cat.id;
+      if (categoriesMap.has(catId) && categoriesMap.get(catId)!.userId !== user.id) {
+        catId = randomUUID();
+        idMap.set(cat.id, catId);
+      }
+      categoriesMap.set(catId, { ...cat, id: catId, userId: user.id });
       count++;
     }
     for (const tx of data.transactions) {
-      transactionsMap.set(tx.id, { ...tx, userId: user.id });
+      let txId = tx.id;
+      if (transactionsMap.has(txId) && transactionsMap.get(txId)!.userId !== user.id) {
+        txId = randomUUID();
+        idMap.set(tx.id, txId);
+      }
+      const accountId = idMap.get(tx.accountId) ?? tx.accountId;
+      const categoryId = idMap.get(tx.categoryId) ?? tx.categoryId;
+      const toAccountId = tx.toAccountId ? (idMap.get(tx.toAccountId) ?? tx.toAccountId) : undefined;
+      transactionsMap.set(txId, {
+        ...tx,
+        id: txId,
+        accountId,
+        categoryId,
+        toAccountId,
+        userId: user.id,
+      });
       count++;
     }
     for (const b of data.budgets) {
-      budgetsMap.set(b.id, { ...b, userId: user.id });
+      let bId = b.id;
+      if (budgetsMap.has(bId) && budgetsMap.get(bId)!.userId !== user.id) {
+        bId = randomUUID();
+        idMap.set(b.id, bId);
+      }
+      const categoryId = idMap.get(b.categoryId) ?? b.categoryId;
+      budgetsMap.set(bId, { ...b, id: bId, categoryId, userId: user.id });
       count++;
     }
     for (const g of data.goals) {
-      goalsMap.set(g.id, { ...g, userId: user.id });
+      let gId = g.id;
+      if (goalsMap.has(gId) && goalsMap.get(gId)!.userId !== user.id) {
+        gId = randomUUID();
+        idMap.set(g.id, gId);
+      }
+      goalsMap.set(gId, { ...g, id: gId, userId: user.id });
       count++;
     }
     for (const inv of data.investments) {
-      investmentsMap.set(inv.id, { ...inv, userId: user.id });
+      let invId = inv.id;
+      if (investmentsMap.has(invId) && investmentsMap.get(invId)!.userId !== user.id) {
+        invId = randomUUID();
+        idMap.set(inv.id, invId);
+      }
+      investmentsMap.set(invId, { ...inv, id: invId, userId: user.id });
       count++;
     }
     for (const liab of data.liabilities) {
-      liabilitiesMap.set(liab.id, { ...liab, userId: user.id });
+      let liabId = liab.id;
+      if (liabilitiesMap.has(liabId) && liabilitiesMap.get(liabId)!.userId !== user.id) {
+        liabId = randomUUID();
+        idMap.set(liab.id, liabId);
+      }
+      liabilitiesMap.set(liabId, { ...liab, id: liabId, userId: user.id });
       count++;
     }
     for (const debt of data.peerDebts ?? []) {
-      peerDebtsMap.set(debt.id, { ...debt, userId: user.id });
+      let debtId = debt.id;
+      if (peerDebtsMap.has(debtId) && peerDebtsMap.get(debtId)!.userId !== user.id) {
+        debtId = randomUUID();
+        idMap.set(debt.id, debtId);
+      }
+      peerDebtsMap.set(debtId, { ...debt, id: debtId, userId: user.id });
       count++;
     }
     for (const rep of data.peerRepayments ?? []) {
-      const reps = peerRepaymentsMap.get(rep.debtId) || [];
-      const existingIdx = reps.findIndex((r) => r.id === rep.id);
-      if (existingIdx >= 0) {
-        reps[existingIdx] = rep;
-      } else {
-        reps.push(rep);
+      const mappedDebtId = idMap.get(rep.debtId) ?? rep.debtId;
+      const debt = peerDebtsMap.get(mappedDebtId);
+      if (debt && debt.userId === user.id) {
+        const reps = peerRepaymentsMap.get(mappedDebtId) || [];
+        const existingIdx = reps.findIndex((r) => r.id === rep.id);
+        if (existingIdx >= 0) {
+          reps[existingIdx] = { ...rep, debtId: mappedDebtId };
+        } else {
+          reps.push({ ...rep, debtId: mappedDebtId });
+        }
+        peerRepaymentsMap.set(mappedDebtId, reps);
+        count++;
       }
-      peerRepaymentsMap.set(rep.debtId, reps);
-      count++;
     }
     for (const claim of data.reimbursements ?? []) {
-      reimbursementsMap.set(claim.id, { ...claim, userId: user.id });
+      let claimId = claim.id;
+      if (reimbursementsMap.has(claimId) && reimbursementsMap.get(claimId)!.userId !== user.id) {
+        claimId = randomUUID();
+        idMap.set(claim.id, claimId);
+      }
+      const transactionId = claim.transactionId
+        ? (idMap.get(claim.transactionId) ?? claim.transactionId)
+        : null;
+      reimbursementsMap.set(claimId, { ...claim, id: claimId, transactionId, userId: user.id });
       count++;
     }
     for (const sub of data.subscriptions ?? []) {
-      subscriptionsMap.set(sub.id, { ...sub, userId: user.id });
+      let subId = sub.id;
+      if (subscriptionsMap.has(subId) && subscriptionsMap.get(subId)!.userId !== user.id) {
+        subId = randomUUID();
+        idMap.set(sub.id, subId);
+      }
+      subscriptionsMap.set(subId, { ...sub, id: subId, userId: user.id });
       count++;
     }
 

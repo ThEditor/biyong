@@ -28,6 +28,9 @@ export class TransactionUseCases {
       if (!tx.toAccountId) {
         throw new Error('Transfer transaction requires a destination toAccountId');
       }
+      if (tx.accountId === tx.toAccountId) {
+        throw new Error('Transfer destination cannot be the same as the source account');
+      }
       const toAccount = await this.accountRepo.findById(tx.toAccountId);
       if (!toAccount) {
         throw new Error(`Destination account not found: ${tx.toAccountId}`);
@@ -51,6 +54,9 @@ export class TransactionUseCases {
     if (tx.type === 'transfer') {
       if (!tx.toAccountId) {
         throw new Error('Transfer transaction requires a destination toAccountId');
+      }
+      if (tx.accountId === tx.toAccountId) {
+        throw new Error('Transfer destination cannot be the same as the source account');
       }
       const toAccount = await this.accountRepo.findById(tx.toAccountId);
       if (!toAccount) {

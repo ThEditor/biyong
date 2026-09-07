@@ -30,6 +30,10 @@ export interface FinancialContext {
 function deriveBalance(account: Account, transactions: Transaction[]): number {
   let balance = account.initialBalanceMinor;
   for (const tx of transactions) {
+    if (tx.type === 'transfer' && tx.accountId === account.id && tx.toAccountId === account.id) {
+      // Self-transfer net impact is zero
+      continue;
+    }
     if (tx.accountId === account.id) {
       if (tx.type === 'income') {
         balance += tx.amountMinor;
